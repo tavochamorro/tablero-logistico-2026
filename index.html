@@ -213,34 +213,58 @@
             'DIC': 'DIC', 'DICIEMBRE': 'DIC', 'DEC': 'DIC'
         };
 
-        function parseMonthCode(val) {
-            if (!val) return '';
+        // PARSEADOR UNIVERSAL DE FECHAS Y MESES
+        function parseAnyMonth(val) {
+            if (val === null || val === undefined || val === '') return null;
             const s = String(val).trim();
+
+            // 1. Objeto de fecha de Google Visualization: Date(2026, 0, 15)
             const mMatch = s.match(/Date\(\s*\d+\s*,\s*(\d+)/i);
             if (mMatch) {
                 const idx = parseInt(mMatch[1]);
-                if (idx >= 0 && idx < 12) return MONTH_ORDER[idx];
+                if (idx >= 0 && idx < 12) {
+                    return { code: MONTH_ORDER[idx], name: MONTH_LONG_ORDER[idx], index: idx };
+                }
             }
-            const cleanAlpha = cleanText(s).replace(/[^A-Z]/g, '');
-            if (MONTH_PREFIXES[cleanAlpha]) return MONTH_PREFIXES[cleanAlpha];
-            if (cleanAlpha.length >= 3 && MONTH_PREFIXES[cleanAlpha.substring(0, 3)]) {
-                return MONTH_PREFIXES[cleanAlpha.substring(0, 3)];
-            }
-            return '';
-        }
 
-        function parseMonthLong(val) {
-            if (val === null || val === undefined || val === '') return '';
-            const s = String(val).trim();
-            if (/^\d+$/.test(s)) {
+            // 2. Formato fecha DD/MM/AAAA o D/M/AAAA o DD-MM-AAAA
+            const slashMatch = s.match(/^\d{1,2}[\/\-\.](\d{1,2})[\/\-\.]\d{2,4}/);
+            if (slashMatch) {
+                const mNum = parseInt(slashMatch[1]);
+                if (mNum >= 1 && mNum <= 12) {
+                    return { code: MONTH_ORDER[mNum - 1], name: MONTH_LONG_ORDER[mNum - 1], index: mNum - 1 };
+                }
+            }
+
+            // 3. Formato fecha ISO AAAA-MM-DD
+            const isoMatch = s.match(/^\d{4}[\/\-](\d{1,2})[\/\-]\d{1,2}/);
+            if (isoMatch) {
+                const mNum = parseInt(isoMatch[1]);
+                if (mNum >= 1 && mNum <= 12) {
+                    return { code: MONTH_ORDER[mNum - 1], name: MONTH_LONG_ORDER[mNum - 1], index: mNum - 1 };
+                }
+            }
+
+            // 4. Número directo 1 al 12
+            if (/^\d{1,2}$/.test(s)) {
                 const n = parseInt(s);
-                if (n >= 1 && n <= 12) return MONTH_LONG_ORDER[n - 1];
+                if (n >= 1 && n <= 12) {
+                    return { code: MONTH_ORDER[n - 1], name: MONTH_LONG_ORDER[n - 1], index: n - 1 };
+                }
             }
-            const code = parseMonthCode(s);
+
+            // 5. Texto en español o inglés
+            const cleanAlpha = cleanText(s).replace(/[^A-Z]/g, '');
+            let code = MONTH_PREFIXES[cleanAlpha];
+            if (!code && cleanAlpha.length >= 3) {
+                code = MONTH_PREFIXES[cleanAlpha.substring(0, 3)];
+            }
             if (code && MONTH_ORDER.includes(code)) {
-                return MONTH_LONG_ORDER[MONTH_ORDER.indexOf(code)];
+                const idx = MONTH_ORDER.indexOf(code);
+                return { code: code, name: MONTH_LONG_ORDER[idx], index: idx };
             }
-            return '';
+
+            return null;
         }
 
         function fetchSheetData(gid) {
@@ -279,15 +303,12 @@
             });
         }
 
-        // Extractor universal: recupera encabezados desde table.cols o desde table.rows
+        // Extractor universal
         function extractHeadersAndRows(t, primaryKeyword = "NEGOCIO") {
             if (!t) return { headers: [], rows: [] };
 
             const cols = t.cols || [];
-            const colLabels = cols.map(c => {
-                if (!c) return '';
-                return (c.label !== undefined && c.label !== null) ? String(c.label).trim() : '';
-            });
+            const colLabels = cols.map(c => (c && c.label !== undefined && c.label !== null) ? String(c.label).trim() : '');
 
             const numCols = cols.length;
             const rawRows = t.rows || [];
@@ -306,7 +327,7 @@
                         const f = cell.f;
                         if (v !== null && v !== undefined) {
                             if (typeof v === 'string' && v.startsWith('Date(') && f) {
-                                row.append ? row.append(f) : row.push(f);
+                                row.push(f);
                             } else {
                                 row.push(v);
                             }
@@ -355,6 +376,7 @@
                 fetchSheetData(GID_TONELADAS).catch(() => null)
             ]);
 
+            // 1. PROCESAR INDICADORES KPIS
             const { headers: rawHeaders, rows: dataRows } = extractHeadersAndRows(rawInd, 'NEGOCIO');
             if (dataRows.length === 0) throw new Error("La hoja 'Indicadores Acum 2026' no contiene filas de datos.");
 
@@ -369,16 +391,16 @@
                 else if (norm.includes('IMAG') || norm.includes('LOGO')) idxImg = i;
                 else if (norm.includes('ACUM')) idxAcum = i;
 
-                const mCode = parseMonthCode(h);
-                if (mCode && !monthCols.some(mc => mc.name === mCode)) {
-                    monthCols.push({ name: mCode, index: i });
+                const mObj = parseAnyMonth(h);
+                if (mObj && !monthCols.some(mc => mc.name === mObj.code)) {
+                    monthCols.push({ name: mObj.code, index: i, order: mObj.index });
                 }
             });
 
             if (idxNegocio === -1) idxNegocio = 0;
             if (idxIndicador === -1) idxIndicador = 1;
 
-            monthCols.sort((a, b) => MONTH_ORDER.indexOf(a.name) - MONTH_ORDER.indexOf(b.name));
+            monthCols.sort((a, b) => a.order - b.order);
 
             const businesses = {};
             let nutresaLogo = 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/63/Logo_Nutresa.svg/1200px-Logo_Nutresa.svg.png';
@@ -490,44 +512,60 @@
                 return cItem;
             });
 
-            // Toneladas GPS
+            // 2. PROCESAR TONELADAS GPS (CON AUTO-RELLENO DE CELDAS COMBINADAS Y FECHAS ROBUSTAS)
             let toneladasData = {};
             if (rawTon) {
                 const { headers: hTon, rows: rTon } = extractHeadersAndRows(rawTon, 'NEGOCIO');
                 if (rTon.length > 0) {
                     const cleanHTon = hTon.map(h => cleanText(h));
-                    const idxTN = cleanHTon.findIndex(h => h.includes('NEGOCIO') || h.includes('EMPRESA'));
+                    const idxTN = cleanHTon.findIndex(h => h.includes('NEGOCIO') || h.includes('EMPRESA') || h.includes('COMPANIA'));
                     const idxTM = cleanHTon.findIndex(h => h.includes('MARCA'));
-                    const idxTMes = cleanHTon.findIndex(h => h.includes('MES'));
+                    const idxTMes = cleanHTon.findIndex(h => h.includes('MES') || h.includes('FECHA') || h.includes('PERIODO'));
                     const idxT25 = cleanHTon.findIndex(h => h.includes('2025') || h.includes('25'));
                     const idxT26 = cleanHTon.findIndex(h => h.includes('2026') || h.includes('26'));
                     const idxT27 = cleanHTon.findIndex(h => h.includes('2027') || h.includes('27'));
 
+                    let lastNegocio = '';
+                    let lastMarca = '';
+
                     rTon.forEach(row => {
-                        const negocio = idxTN >= 0 ? cleanText(row[idxTN]) : '';
-                        let marca = idxTM >= 0 ? String(row[idxTM]).trim().toUpperCase() : '';
-                        let rawMes = idxTMes >= 0 ? row[idxTMes] : '';
-                        let mes = parseMonthLong(rawMes);
+                        let rawNeg = idxTN >= 0 ? cleanText(row[idxTN]) : '';
+                        if (rawNeg) {
+                            lastNegocio = rawNeg;
+                        } else if (!rawNeg && lastNegocio) {
+                            rawNeg = lastNegocio; // Auto-relleno de celdas combinadas
+                        }
+
+                        let rawMar = idxTM >= 0 ? String(row[idxTM]).trim().toUpperCase() : '';
+                        if (rawMar) {
+                            lastMarca = rawMar;
+                        } else if (!rawMar && lastMarca) {
+                            rawMar = lastMarca; // Auto-relleno de celdas combinadas
+                        }
+
+                        let rawMesVal = idxTMes >= 0 ? row[idxTMes] : '';
+                        let mesObj = parseAnyMonth(rawMesVal);
                         
-                        if (!mes || !negocio) return;
+                        if (!mesObj || !rawNeg) return;
+                        const mes = mesObj.name; // 'Enero', 'Febrero', etc.
 
                         const v25 = idxT25 >= 0 ? parseValue(row[idxT25]) : 0;
                         const v26 = idxT26 >= 0 ? parseValue(row[idxT26]) : 0;
                         const v27 = idxT27 >= 0 ? parseValue(row[idxT27]) : 0;
 
-                        if (!toneladasData[negocio]) toneladasData[negocio] = { total: {}, marcas: {} };
-                        if (!toneladasData[negocio].total[mes]) toneladasData[negocio].total[mes] = { t25: 0, t26: 0, t27: 0 };
-                        toneladasData[negocio].total[mes].t25 += v25;
-                        toneladasData[negocio].total[mes].t26 += v26;
-                        toneladasData[negocio].total[mes].t27 += v27;
+                        if (!toneladasData[rawNeg]) toneladasData[rawNeg] = { total: {}, marcas: {} };
+                        if (!toneladasData[rawNeg].total[mes]) toneladasData[rawNeg].total[mes] = { t25: 0, t26: 0, t27: 0 };
+                        toneladasData[rawNeg].total[mes].t25 += v25;
+                        toneladasData[rawNeg].total[mes].t26 += v26;
+                        toneladasData[rawNeg].total[mes].t27 += v27;
 
-                        if (marca) {
-                            if (!toneladasData[negocio].marcas[marca]) toneladasData[negocio].marcas[marca] = {};
-                            if (!toneladasData[negocio].marcas[marca][mes]) toneladasData[negocio].marcas[marca][mes] = { t25: 0, t26: 0, t27: 0 };
-                            toneladasData[negocio].marcas[marca][mes].t25 += v25;
-                            toneladasData[negocio].marcas[marca][mes].t26 += v26;
-                            toneladasData[negocio].marcas[marca][mes].t27 += v27;
-                        }
+                        // Si la fila no tiene marca, asignamos el nombre del negocio como marca
+                        const finalMarca = rawMar || rawNeg;
+                        if (!toneladasData[rawNeg].marcas[finalMarca]) toneladasData[rawNeg].marcas[finalMarca] = {};
+                        if (!toneladasData[rawNeg].marcas[finalMarca][mes]) toneladasData[rawNeg].marcas[finalMarca][mes] = { t25: 0, t26: 0, t27: 0 };
+                        toneladasData[rawNeg].marcas[finalMarca][mes].t25 += v25;
+                        toneladasData[rawNeg].marcas[finalMarca][mes].t26 += v26;
+                        toneladasData[rawNeg].marcas[finalMarca][mes].t27 += v27;
                     });
                 }
             }
@@ -727,6 +765,7 @@
             return (newVal / oldVal) - 1;
         }
 
+        // RENDERIZADOR DE TONELADAS GPS TOLERANTE Y EXTENDIDO
         function renderToneladas() {
             const submenuContainer = document.getElementById('ton-submenu-container');
             if (!allTonData || Object.keys(allTonData).length === 0) {
@@ -740,9 +779,14 @@
             }
 
             const months = MONTH_LONG_ORDER;
-            const businessesWithData = Object.keys(allTonData).sort((a, b) => {
-                let idxA = DESIRED_BUSINESS_ORDER.indexOf(cleanText(a));
-                let idxB = DESIRED_BUSINESS_ORDER.indexOf(cleanText(b));
+            const availableTonKeys = Object.keys(allTonData);
+
+            // Lista ordenada de compañías con datos
+            const businessesWithData = availableTonKeys.sort((a, b) => {
+                const normA = cleanText(a);
+                const normB = cleanText(b);
+                let idxA = DESIRED_BUSINESS_ORDER.findIndex(o => normA.includes(o) || o.includes(normA));
+                let idxB = DESIRED_BUSINESS_ORDER.findIndex(o => normB.includes(o) || o.includes(normB));
                 if (idxA === -1) idxA = 99;
                 if (idxB === -1) idxB = 99;
                 return idxA - idxB;
@@ -759,10 +803,12 @@
             `;
             
             businessesWithData.forEach(b => {
-                const isActive = state.business === b;
+                const normB = cleanText(b);
+                const normState = cleanText(state.business);
+                const isActive = normState.includes(normB) || normB.includes(normState);
                 let displayName = b;
-                if (b === 'ALIMENTOS DORIA' || b === 'DORIA') displayName = 'PASTAS';
-                if (b.includes('TRESMONTES')) displayName = 'TMLUC';
+                if (normB.includes('DORIA')) displayName = 'PASTAS';
+                if (normB.includes('TRESMONTES') || normB.includes('TMLUC')) displayName = 'TMLUC';
                 subMenuHtml += `<button onclick="changeB('${b}')" class="px-4 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-all shadow-sm ${isActive ? 'bg-[#70ad47] text-white scale-105' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}">${displayName}</button>`;
             });
 
@@ -776,17 +822,26 @@
             let totalYear25 = 0, totalYear26 = 0, totalYear27 = 0;
             let totalYear26_prod = 0, totalYear26_proj = 0;
 
-            const isConsolidado = state.business === 'CONSOLIDADO';
+            const isConsolidado = cleanText(state.business) === 'CONSOLIDADO';
             let sourceData = {};
 
             if (isConsolidado) {
-                sourceData = allTonData;
+                // Vista Consolidada: Suma el total de cada empresa
+                availableTonKeys.forEach(k => {
+                    sourceData[k] = allTonData[k].total || {};
+                });
             } else {
-                const bKey = Object.keys(allTonData).find(k => cleanText(k) === cleanText(state.business));
-                if (bKey && allTonData[bKey]) {
-                    const marcasObj = allTonData[bKey].marcas || {};
+                // Vista por Negocio específico
+                const normCurrent = cleanText(state.business);
+                const matchedKey = availableTonKeys.find(k => {
+                    const normK = cleanText(k);
+                    return normK === normCurrent || normCurrent.includes(normK) || normK.includes(normCurrent);
+                });
+
+                if (matchedKey && allTonData[matchedKey]) {
+                    const marcasObj = allTonData[matchedKey].marcas || {};
                     if (Object.keys(marcasObj).length === 0) {
-                        sourceData[bKey] = allTonData[bKey].total;
+                        sourceData[matchedKey] = allTonData[matchedKey].total || {};
                     } else {
                         sourceData = marcasObj;
                     }
@@ -794,7 +849,7 @@
             }
 
             Object.keys(sourceData).forEach(key => {
-                const dataObj = isConsolidado ? (sourceData[key].total || sourceData[key]) : sourceData[key];
+                const dataObj = sourceData[key] || {};
                 let ent = { 
                     name: key, 
                     t25: 0, t26: 0, t27: 0, 
@@ -805,8 +860,8 @@
                 };
                 
                 months.forEach((m, idx) => {
-                    const vals = dataObj[m] || {t25:0, t26:0, t27:0};
-                    ent.monthly[m] = { t25: vals.t25, t26: vals.t26, t27: vals.t27 };
+                    const vals = dataObj[m] || { t25: 0, t26: 0, t27: 0 };
+                    ent.monthly[m] = { t25: vals.t25 || 0, t26: vals.t26 || 0, t27: vals.t27 || 0 };
                     ent.t25 += vals.t25 || 0;
                     ent.t26 += vals.t26 || 0;
                     ent.t27 += vals.t27 || 0;
@@ -835,7 +890,7 @@
 
             entities.sort((a, b) => b.t26 - a.t26);
 
-            const fmt = v => (!v || isNaN(v) || v === 0) ? '-' : v.toLocaleString('es-CO', {maximumFractionDigits: 0});
+            const fmt = v => (!v || isNaN(v) || v === 0) ? '-' : v.toLocaleString('es-CO', { maximumFractionDigits: 0 });
             const fmtPct = v => (v === null || v === undefined || isNaN(v)) ? '0%' : (v * 100).toFixed(2) + '%';
             const currentMonthIdx = mesCierreActual; 
 
@@ -865,7 +920,7 @@
                     </div>
                 </div>
             `;
-            document.getElementById('ton-ranking-title').innerText = state.business === 'CONSOLIDADO' ? 'Plataforma' : 'Marca';
+            document.getElementById('ton-ranking-title').innerText = isConsolidado ? 'Plataforma' : 'Marca';
 
             const ctxTrend = document.getElementById('chart-ton-trend').getContext('2d');
             if (charts['chart-ton-trend']) charts['chart-ton-trend'].destroy();
@@ -885,7 +940,8 @@
                             backgroundColor: '#1f7a1f',
                             borderWidth: 3,
                             pointRadius: 4,
-                            tension: 0.1
+                            tension: 0.1,
+                            spanGaps: true // Conecta líneas si hay meses vacíos
                         },
                         {
                             label: '2026',
@@ -896,7 +952,8 @@
                             pointBorderColor: pointColors26,
                             borderWidth: 3,
                             pointRadius: 5,
-                            tension: 0.1
+                            tension: 0.1,
+                            spanGaps: true
                         },
                         {
                             label: '2027',
@@ -907,7 +964,8 @@
                             pointBorderColor: pointColors27,
                             borderWidth: 3,
                             pointRadius: 5,
-                            tension: 0.1
+                            tension: 0.1,
+                            spanGaps: true
                         },
                         {
                             label: 'Proyección',
@@ -930,15 +988,15 @@
                             labels: { 
                                 usePointStyle: true, 
                                 boxWidth: 8, 
-                                font: {weight: 'bold', size: 10},
+                                font: { weight: 'bold', size: 10 },
                                 filter: item => !item.text.includes('2027')
                             } 
                         },
                         datalabels: { display: false }
                     },
                     scales: {
-                        y: { beginAtZero: false, ticks: { color: '#64748b', font: {size: 10} }, grid: { borderDash: [2, 4], color: '#e2e8f0' } },
-                        x: { grid: { display: false }, ticks: { color: '#64748b', font: {size: 10} } }
+                        y: { beginAtZero: false, ticks: { color: '#64748b', font: { size: 10 } }, grid: { borderDash: [2, 4], color: '#e2e8f0' } },
+                        x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 } } }
                     }
                 }
             });
@@ -946,7 +1004,7 @@
             let sumHtml = `<table class="w-full text-xs text-right border-collapse">
                 <thead>
                     <tr class="bg-[#004d40] text-white">
-                        <th class="p-2 border border-white text-left font-bold">${state.business === 'CONSOLIDADO' ? 'Plataforma' : 'Marca'}</th>
+                        <th class="p-2 border border-white text-left font-bold">${isConsolidado ? 'Plataforma' : 'Marca'}</th>
                         <th class="p-2 border border-white font-bold leading-tight">Toneladas<br>producidas ▼<br><span class="text-[9px] text-amber-300 font-normal">Incluye proyecciones</span></th>
                         <th class="p-2 border border-white font-bold">% Variación<br>25-26</th>
                     </tr>
@@ -1050,8 +1108,8 @@
                         datalabels: {}
                     },
                     scales: {
-                        x: { stacked: true, display: false, grid: {display: false}, max: Math.max(...entities.map(e => e.t26), 1) * 1.20 },
-                        y: { stacked: true, grid: {display: false}, ticks: {color: '#334155', font: {size: 11, weight: '600'}} }
+                        x: { stacked: true, display: false, grid: { display: false }, max: Math.max(...entities.map(e => e.t26), 1) * 1.20 },
+                        y: { stacked: true, grid: { display: false }, ticks: { color: '#334155', font: { size: 11, weight: '600' } } }
                     }
                 }
             });
@@ -1059,7 +1117,7 @@
             let detHtml = `<table class="w-full text-[10px] text-right border-collapse min-w-[800px]">
                 <thead>
                     <tr class="text-white uppercase tracking-wider">
-                        <th class="p-2 border border-white text-left font-black w-48 bg-[#548235]">${state.business === 'CONSOLIDADO' ? 'NEGOCIO' : 'MARCA'}</th>
+                        <th class="p-2 border border-white text-left font-black w-48 bg-[#548235]">${isConsolidado ? 'NEGOCIO' : 'MARCA'}</th>
                         <th class="p-2 border border-white text-left font-bold w-24 bg-[#70ad47]">Valores</th>`;
             
             months.forEach(m => { detHtml += `<th class="p-2 border border-white font-bold bg-[#70ad47]">${m}</th>`; });
@@ -1545,6 +1603,7 @@
                             pointRadius: window.innerWidth < 1024 ? 4 : 6,
                             pointHitRadius: 15,
                             tension: 0.3,
+                            spanGaps: true,
                             datalabels: {
                                 align: 'top',
                                 anchor: 'end',
@@ -1563,6 +1622,7 @@
                             borderWidth: (enConst || item.meta === 0) ? 0 : 1.5, 
                             pointRadius: 0,
                             pointHitRadius: 15,
+                            spanGaps: true,
                             datalabels: { 
                                 display: ctx => !enConst && item.meta > 0 && ctx.dataIndex === ctx.dataset.data.length - 1,
                                 align: 'bottom',
