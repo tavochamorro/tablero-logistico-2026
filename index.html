@@ -163,7 +163,6 @@
     </main>
 
     <script>
-        // CONFIGURACIÓN DIRECTA DE HOJAS
         const SPREADSHEET_ID = '1WnbpzqkQHPesiZBHS_82NKXbyQJ5D-IXYKwzWOFKkSo';
         const GID_INDICADORES = '1446461546';
         const GID_TONELADAS = '1275567452';
@@ -176,17 +175,9 @@
         const BRAND_BANNER_URL = "https://lh3.googleusercontent.com/d/1sCP7ggaX_mkH1U8QWGvu1D7r4o_q16FE";
 
         const DESIRED_BUSINESS_ORDER = [
-            'NOEL',
-            'ABIMAR',
-            'POZUELO',
-            'GCFOODS',
-            'ALIMENTOS DORIA',
-            'DORIA',
-            'YUPI COLOMBIA',
-            'YUPI ECUADOR',
-            'TRESMONTES LUCCHETTI',
-            'TRESMONTES LUCHETTI',
-            'TMLUC'
+            'NOEL', 'ABIMAR', 'POZUELO', 'GCFOODS', 'ALIMENTOS DORIA',
+            'DORIA', 'YUPI COLOMBIA', 'YUPI ECUADOR', 'TRESMONTES LUCCHETTI',
+            'TRESMONTES LUCHETTI', 'TMLUC'
         ];
 
         let allData = [];
@@ -196,7 +187,69 @@
         let charts = {};
         let mesCierreActual = new Date().getMonth() - 1;
 
-        // LECTOR DIRECTO DE GOOGLE SHEETS (SIN APPS SCRIPT)
+        // Limpieza de caracteres y acentos
+        function cleanText(str) {
+            return String(str || '')
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .trim()
+                .toUpperCase();
+        }
+
+        // Conversión flexible de meses
+        const MONTH_MAP = {
+            'ENE': 'Enero', 'ENERO': 'Enero', 'JAN': 'Enero',
+            'FEB': 'Febrero', 'FEBRERO': 'Febrero',
+            'MAR': 'Marzo', 'MARZO': 'Marzo',
+            'ABR': 'Abril', 'ABRIL': 'Abril', 'APR': 'Abril',
+            'MAY': 'Mayo', 'MAYO': 'Mayo',
+            'JUN': 'Junio', 'JUNIO': 'Junio',
+            'JUL': 'Julio', 'JULIO': 'Julio',
+            'AGO': 'Agosto', 'AGOSTO': 'Agosto', 'AUG': 'Agosto',
+            'SEP': 'Septiembre', 'SEPT': 'Septiembre', 'SEPTIEMBRE': 'Septiembre', 'SET': 'Septiembre',
+            'OCT': 'Octubre', 'OCTUBRE': 'Octubre',
+            'NOV': 'Noviembre', 'NOVIEMBRE': 'Noviembre',
+            'DIC': 'Diciembre', 'DICIEMBRE': 'Diciembre', 'DEC': 'Diciembre'
+        };
+
+        const MONTH_ORDER = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+        const MONTH_LONG_ORDER = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+        function parseMonthCode(val) {
+            if (!val) return '';
+            const s = String(val).trim();
+            
+            // Si es un objeto fecha de GViz Date(YYYY, M, D)
+            const mMatch = s.match(/Date\(\s*\d+\s*,\s*(\d+)/i);
+            if (mMatch) {
+                const idx = parseInt(mMatch[1]);
+                if (idx >= 0 && idx < 12) return MONTH_ORDER[idx];
+            }
+
+            // Si viene numérico 1-12
+            if (/^\d+$/.test(s)) {
+                const n = parseInt(s);
+                if (n >= 1 && n <= 12) return MONTH_ORDER[n - 1];
+            }
+
+            const c = cleanText(s).replace(/[^A-Z]/g, '');
+            for (let k in MONTH_MAP) {
+                if (c === k || c.startsWith(k)) {
+                    return MONTH_ORDER[MONTH_LONG_ORDER.indexOf(MONTH_MAP[k])];
+                }
+            }
+            return '';
+        }
+
+        function parseMonthLong(val) {
+            const code = parseMonthCode(val);
+            if (code) {
+                return MONTH_LONG_ORDER[MONTH_ORDER.indexOf(code)];
+            }
+            return '';
+        }
+
+        // Lector GViz tolerante
         function fetchSheetData(gid) {
             return new Promise((resolve, reject) => {
                 const callbackName = 'gviz_cb_' + Math.floor(Math.random() * 100000000);
@@ -204,7 +257,7 @@
 
                 const timer = setTimeout(() => {
                     cleanup();
-                    reject(new Error("Tiempo de espera agotado al leer la hoja."));
+                    reject(new Error("Tiempo de espera agotado al conectar con Google Sheets."));
                 }, 15000);
 
                 function cleanup() {
@@ -227,7 +280,7 @@
                 script.src = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=responseHandler:${callbackName}&gid=${gid}&headers=0`;
                 script.onerror = () => {
                     cleanup();
-                    reject(new Error("No se pudo conectar con la hoja. Revisa que el enlace tenga permiso 'Cualquier persona con el vínculo puede ver'."));
+                    reject(new Error("No se pudo conectar a la hoja. Verifica permisos públicos en Google Drive."));
                 };
                 document.body.appendChild(script);
             });
@@ -239,12 +292,18 @@
             for (let i = 0; i < t.rows.length; i++) {
                 const r = t.rows[i];
                 if (!r || !r.c) continue;
-                mat.push(r.c.map(cell => (cell && cell.v !== null && cell.v !== undefined) ? cell.v : ''));
+                mat.push(r.c.map(cell => {
+                    if (!cell) return '';
+                    // Si trae valor formateado f (prioridad para texto/meses), sino valor v
+                    if (cell.f !== undefined && cell.f !== null && String(cell.f).trim() !== '') {
+                        return cell.f;
+                    }
+                    return (cell.v !== null && cell.v !== undefined) ? cell.v : '';
+                }));
             }
             return mat;
         }
 
-        // PROCESADOR DE DATOS INTEGRADO
         async function loadAndProcessData() {
             const [rawInd, rawConfig, rawTon] = await Promise.all([
                 fetchSheetData(GID_INDICADORES),
@@ -255,19 +314,32 @@
             const data = tableToMatrix(rawInd);
             if (data.length < 2) throw new Error("La hoja 'Indicadores Acum 2026' no contiene datos.");
 
-            const headers = data[0].map(h => String(h).trim().toUpperCase());
+            const rawHeaders = data[0];
             const rows = data.slice(1);
 
-            const colMap = {};
+            let idxNegocio = -1, idxIndicador = -1, idxMeta = -1, idxImg = -1, idxAcum = -1;
             const monthCols = [];
-            const knownMonths = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"];
 
-            headers.forEach((h, i) => {
-                colMap[h] = i;
-                if (knownMonths.includes(h)) monthCols.push({ name: h, index: i });
+            rawHeaders.forEach((h, i) => {
+                const norm = cleanText(h);
+                if (norm.includes('NEGOCIO') || norm.includes('EMPRESA') || norm.includes('COMPANIA')) idxNegocio = i;
+                else if (norm.includes('INDICADOR')) idxIndicador = i;
+                else if (norm.includes('META') || norm.includes('OBJETIVO') || norm.includes('PTO')) idxMeta = i;
+                else if (norm.includes('IMAG') || norm.includes('LOGO')) idxImg = i;
+                else if (norm.includes('ACUM')) idxAcum = i;
+                
+                // Reconocimiento de meses
+                const mCode = parseMonthCode(h);
+                if (mCode && !monthCols.some(mc => mc.name === mCode)) {
+                    monthCols.push({ name: mCode, index: i });
+                }
             });
 
-            if (!('NEGOCIO' in colMap)) throw new Error("No se encontró la columna 'NEGOCIO' en la hoja de indicadores.");
+            if (idxNegocio === -1) idxNegocio = 0;
+            if (idxIndicador === -1) idxIndicador = 1;
+
+            // Orden cronológico de los meses detectados
+            monthCols.sort((a, b) => MONTH_ORDER.indexOf(a.name) - MONTH_ORDER.indexOf(b.name));
 
             const businesses = {};
             let nutresaLogo = 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/63/Logo_Nutresa.svg/1200px-Logo_Nutresa.svg.png';
@@ -284,11 +356,11 @@
             } catch(e) {}
 
             const processedData = rows.map(row => {
-                const negocio = String(row[colMap['NEGOCIO']] || '').trim().toUpperCase();
-                const indicador = String(row[colMap['INDICADOR 2026']] || '').trim();
-                const meta = parseValue(row[colMap['META']]);
-                const img = String(row[colMap['IMÁGENES']] || '').trim();
-                const acum = parseValue(row[colMap['ACUM AÑO 2026']]);
+                const negocio = cleanText(row[idxNegocio]);
+                const indicador = String(idxIndicador >= 0 ? row[idxIndicador] : '').trim();
+                const meta = parseValue(idxMeta >= 0 ? row[idxMeta] : 0);
+                const img = String(idxImg >= 0 ? row[idxImg] : '').trim();
+                const acum = parseValue(idxAcum >= 0 ? row[idxAcum] : 0);
 
                 if (negocio === 'CONSOLIDADO' && img) nutresaLogo = img;
                 if (negocio && negocio !== 'CONSOLIDADO' && !businesses[negocio]) {
@@ -296,13 +368,15 @@
                 }
 
                 const item = { negocio, indicador, meta, img, acum, mensual: {} };
-                monthCols.forEach(m => { item.mensual[m.name] = parseValue(row[m.index]); });
+                monthCols.forEach(m => {
+                    item.mensual[m.name] = parseValue(row[m.index]);
+                });
                 return item;
-            });
+            }).filter(d => d.negocio !== '');
 
             // Promedio Noel
-            const noelNac = processedData.find(d => d.negocio === 'NOEL' && d.indicador.toUpperCase().includes('PRONÓSTICO NACIONAL'));
-            const noelInt = processedData.find(d => d.negocio === 'NOEL' && d.indicador.toUpperCase().includes('PRONÓSTICO INTERNACIONAL'));
+            const noelNac = processedData.find(d => d.negocio === 'NOEL' && cleanText(d.indicador).includes('PRONOSTICO') && cleanText(d.indicador).includes('NACIONAL'));
+            const noelInt = processedData.find(d => d.negocio === 'NOEL' && cleanText(d.indicador).includes('PRONOSTICO') && cleanText(d.indicador).includes('INTERNACIONAL'));
             if (noelNac && noelInt) {
                 const cNoel = {
                     negocio: 'NOEL',
@@ -317,8 +391,8 @@
             }
 
             // Promedio Yupi Colombia
-            const yupiNac = processedData.find(d => d.negocio === 'YUPI COLOMBIA' && d.indicador.toUpperCase().includes('PRONÓSTICO NACIONAL'));
-            const yupiInt = processedData.find(d => d.negocio === 'YUPI COLOMBIA' && (d.indicador.toUpperCase().includes('INTERNACIONAL') || d.indicador.toUpperCase().includes('INTERNACIONALES')) && d.indicador.toUpperCase().includes('PRONÓSTICO'));
+            const yupiNac = processedData.find(d => d.negocio === 'YUPI COLOMBIA' && cleanText(d.indicador).includes('PRONOSTICO') && cleanText(d.indicador).includes('NACIONAL'));
+            const yupiInt = processedData.find(d => d.negocio === 'YUPI COLOMBIA' && cleanText(d.indicador).includes('PRONOSTICO') && cleanText(d.indicador).includes('INTERNACIONAL'));
             if (yupiNac && yupiInt) {
                 const cYupi = {
                     negocio: 'YUPI COLOMBIA',
@@ -333,8 +407,8 @@
             }
 
             // Promedio ABIMAR
-            const abimarNac = processedData.find(d => d.negocio === 'ABIMAR' && d.indicador.toUpperCase().includes('PRONÓSTICO NACIONAL'));
-            const abimarInt = processedData.find(d => d.negocio === 'ABIMAR' && d.indicador.toUpperCase().includes('PRONÓSTICO INTERNACIONAL'));
+            const abimarNac = processedData.find(d => d.negocio === 'ABIMAR' && cleanText(d.indicador).includes('PRONOSTICO') && cleanText(d.indicador).includes('NACIONAL'));
+            const abimarInt = processedData.find(d => d.negocio === 'ABIMAR' && cleanText(d.indicador).includes('PRONOSTICO') && cleanText(d.indicador).includes('INTERNACIONAL'));
             if (abimarNac && abimarInt) {
                 const cAbimar = {
                     negocio: 'ABIMAR',
@@ -364,31 +438,31 @@
                 return cItem;
             });
 
-            // Toneladas GPS
+            // Procesar Toneladas GPS
             let toneladasData = {};
             try {
                 if (rawTon) {
                     const dataTonRaw = tableToMatrix(rawTon);
                     if (dataTonRaw.length > 1) {
-                        const headersTon = dataTonRaw[0].map(h => String(h).trim().toUpperCase());
-                        const idxNegocio = headersTon.indexOf('NEGOCIO');
-                        const idxMarca = headersTon.indexOf('MARCA'); 
-                        const idxMes = headersTon.indexOf('MES');
-                        const idx2025 = headersTon.indexOf('TON 2025');
-                        const idx2026 = headersTon.indexOf('TON 2026');
-                        const idx2027 = headersTon.indexOf('TON 2027');
+                        const headersTon = dataTonRaw[0].map(h => cleanText(h));
+                        const idxTN = headersTon.findIndex(h => h.includes('NEGOCIO') || h.includes('EMPRESA'));
+                        const idxTM = headersTon.findIndex(h => h.includes('MARCA'));
+                        const idxTMes = headersTon.findIndex(h => h.includes('MES'));
+                        const idxT25 = headersTon.findIndex(h => h.includes('2025') || h.includes('25'));
+                        const idxT26 = headersTon.findIndex(h => h.includes('2026') || h.includes('26'));
+                        const idxT27 = headersTon.findIndex(h => h.includes('2027') || h.includes('27'));
 
                         dataTonRaw.slice(1).forEach(row => {
-                            const negocio = idxNegocio >= 0 ? String(row[idxNegocio]).trim().toUpperCase() : '';
-                            let marca = idxMarca >= 0 ? String(row[idxMarca]).trim() : '';
-                            let mes = idxMes >= 0 ? String(row[idxMes]).trim() : '';
+                            const negocio = idxTN >= 0 ? cleanText(row[idxTN]) : '';
+                            let marca = idxTM >= 0 ? String(row[idxTM]).trim().toUpperCase() : '';
+                            let rawMes = idxTMes >= 0 ? row[idxTMes] : '';
+                            let mes = parseMonthLong(rawMes);
                             
                             if (!mes || !negocio) return;
-                            mes = mes.charAt(0).toUpperCase() + mes.slice(1).toLowerCase();
 
-                            const v25 = idx2025 >= 0 ? parseFloat(row[idx2025]) || 0 : 0;
-                            const v26 = idx2026 >= 0 ? parseFloat(row[idx2026]) || 0 : 0;
-                            const v27 = idx2027 >= 0 ? parseFloat(row[idx2027]) || 0 : 0;
+                            const v25 = idxT25 >= 0 ? parseValue(row[idxT25]) : 0;
+                            const v26 = idxT26 >= 0 ? parseValue(row[idxT26]) : 0;
+                            const v27 = idxT27 >= 0 ? parseValue(row[idxT27]) : 0;
 
                             if (!toneladasData[negocio]) toneladasData[negocio] = { total: {}, marcas: {} };
                             if (!toneladasData[negocio].total[mes]) toneladasData[negocio].total[mes] = { t25: 0, t26: 0, t27: 0 };
@@ -397,7 +471,6 @@
                             toneladasData[negocio].total[mes].t27 += v27;
 
                             if (marca) {
-                                marca = marca.toUpperCase();
                                 if (!toneladasData[negocio].marcas[marca]) toneladasData[negocio].marcas[marca] = {};
                                 if (!toneladasData[negocio].marcas[marca][mes]) toneladasData[negocio].marcas[marca][mes] = { t25: 0, t26: 0, t27: 0 };
                                 toneladasData[negocio].marcas[marca][mes].t25 += v25;
@@ -468,21 +541,33 @@
                 <div class="bg-red-50 border-l-4 border-red-500 p-6 rounded-md shadow-xl max-w-lg mx-auto text-center">
                     <h3 class="text-red-800 font-black text-xl uppercase tracking-wider">${title}</h3>
                     <p class="text-red-600 mt-3 font-medium">${msg}</p>
-                    <p class="text-xs text-gray-500 mt-5 uppercase tracking-widest">Revisa que la hoja de Google Sheets esté configurada en "Cualquier persona con el vínculo".</p>
+                    <p class="text-xs text-gray-500 mt-5 uppercase tracking-widest">Revisa que la hoja tenga permiso de lectura para cualquier persona con el vínculo.</p>
                 </div>
             `;
         }
 
+        // Conversión numérica blindada (para puntos, comas, porcentajes y espacios)
         function parseValue(val) {
             if (val === null || val === undefined || val === '') return 0;
-            if (typeof val === 'number') return val;
-            let str = String(val).replace(/\s/g, '').replace(',', '.');
-            if (str.includes('%')) return parseFloat(str.replace('%', '')) / 100;
-            return parseFloat(str) || 0;
+            if (typeof val === 'number') return isNaN(val) ? 0 : val;
+            let str = String(val).trim();
+            const isPct = str.includes('%');
+            str = str.replace('%', '').trim();
+            
+            // Si tiene punto como miles y coma como decimal (1.234,50)
+            if (str.includes('.') && str.includes(',')) {
+                str = str.replace(/\./g, '').replace(',', '.');
+            } else if (str.includes(',')) {
+                str = str.replace(',', '.');
+            }
+            
+            const num = parseFloat(str);
+            if (isNaN(num)) return 0;
+            return isPct ? num / 100 : num;
         }
 
         function average(arr) {
-            const f = arr.filter(v => v !== 0);
+            const f = arr.filter(v => v !== 0 && !isNaN(v));
             return f.length ? f.reduce((a, b) => a + b, 0) / f.length : 0;
         }
 
@@ -525,8 +610,8 @@
                     </div>`;
 
             const sortedBusinessKeys = Object.keys(bus).sort((a, b) => {
-                const normA = a.trim().toUpperCase();
-                const normB = b.trim().toUpperCase();
+                const normA = cleanText(a);
+                const normB = cleanText(b);
                 let idxA = DESIRED_BUSINESS_ORDER.findIndex(o => normA.includes(o) || o.includes(normA));
                 let idxB = DESIRED_BUSINESS_ORDER.findIndex(o => normB.includes(o) || o.includes(normB));
                 if (idxA === -1) idxA = 99;
@@ -550,7 +635,7 @@
 
         function renderFilters() {
             const c = document.getElementById('period-filters');
-            if(!state.months) return;
+            if(!state.months || state.months.length === 0) return;
             let h = `<button onclick="changeP('ACUM AÑO 2026')" class="px-4 lg:px-5 py-1.5 rounded-lg text-[9px] lg:text-[10px] font-black tracking-widest bg-white shadow-sm text-blue-900 whitespace-nowrap" id="btn-ACUM">ACUM AÑO</button>`;
             state.months.forEach(m => h += `<button onclick="changeP('${m}')" class="px-4 lg:px-5 py-1.5 rounded-lg text-[9px] lg:text-[10px] font-black tracking-widest text-gray-500 whitespace-nowrap" id="btn-${m}">${m}</button>`);
             c.innerHTML = h;
@@ -602,10 +687,10 @@
                 return;
             }
 
-            const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+            const months = MONTH_LONG_ORDER;
             const businessesWithData = Object.keys(allTonData).sort((a, b) => {
-                let idxA = DESIRED_BUSINESS_ORDER.indexOf(a);
-                let idxB = DESIRED_BUSINESS_ORDER.indexOf(b);
+                let idxA = DESIRED_BUSINESS_ORDER.indexOf(cleanText(a));
+                let idxB = DESIRED_BUSINESS_ORDER.indexOf(cleanText(b));
                 if (idxA === -1) idxA = 99;
                 if (idxB === -1) idxB = 99;
                 return idxA - idxB;
@@ -639,10 +724,26 @@
             let totalYear25 = 0, totalYear26 = 0, totalYear27 = 0;
             let totalYear26_prod = 0, totalYear26_proj = 0;
 
-            const sourceData = state.business === 'CONSOLIDADO' ? allTonData : (allTonData[state.business]?.marcas || {});
+            const isConsolidado = state.business === 'CONSOLIDADO';
+            let sourceData = {};
+
+            if (isConsolidado) {
+                sourceData = allTonData;
+            } else {
+                const bKey = Object.keys(allTonData).find(k => cleanText(k) === cleanText(state.business));
+                if (bKey && allTonData[bKey]) {
+                    const marcasObj = allTonData[bKey].marcas || {};
+                    // Si no tiene desglose de marcas, usar el total de la compañía
+                    if (Object.keys(marcasObj).length === 0) {
+                        sourceData[bKey] = allTonData[bKey].total;
+                    } else {
+                        sourceData = marcasObj;
+                    }
+                }
+            }
 
             Object.keys(sourceData).forEach(key => {
-                const dataObj = state.business === 'CONSOLIDADO' ? sourceData[key].total : sourceData[key];
+                const dataObj = isConsolidado ? (sourceData[key].total || sourceData[key]) : sourceData[key];
                 let ent = { 
                     name: key, 
                     t25: 0, t26: 0, t27: 0, 
@@ -898,7 +999,7 @@
                         datalabels: {}
                     },
                     scales: {
-                        x: { stacked: true, display: false, grid: {display: false}, max: Math.max(...entities.map(e => e.t26)) * 1.20 },
+                        x: { stacked: true, display: false, grid: {display: false}, max: Math.max(...entities.map(e => e.t26), 1) * 1.20 },
                         y: { stacked: true, grid: {display: false}, ticks: {color: '#334155', font: {size: 11, weight: '600'}} }
                     }
                 }
@@ -1001,52 +1102,55 @@
         }
 
         function getI(keyword) {
-            const filtered = allData.filter(d => d.negocio.toUpperCase() === state.business.toUpperCase());
-            if (state.business.toUpperCase() === 'NOEL') {
-                if (keyword.toLowerCase() === 'servicio') {
-                    return filtered.find(d => d.indicador.toLowerCase().includes('servicio noel')) || filtered.find(d => d.indicador.toLowerCase().includes('servicio'));
+            const currentBiz = cleanText(state.business);
+            const filtered = allData.filter(d => cleanText(d.negocio) === currentBiz);
+            const kw = cleanText(keyword);
+
+            if (currentBiz === 'NOEL') {
+                if (kw.includes('SERVICIO')) {
+                    return filtered.find(d => cleanText(d.indicador).includes('SERVICIO NOEL')) || filtered.find(d => cleanText(d.indicador).includes('SERVICIO'));
                 }
-                if (keyword.toLowerCase().includes('pronóstico') || keyword.toLowerCase().includes('pronostico')) {
-                    return filtered.find(d => d.indicador.toLowerCase().includes('pronóstico consolidado noel')) || filtered.find(d => d.indicador.toLowerCase().includes('pronóstico'));
+                if (kw.includes('PRONOSTICO')) {
+                    return filtered.find(d => cleanText(d.indicador).includes('PRONOSTICO CONSOLIDADO NOEL')) || filtered.find(d => cleanText(d.indicador).includes('PRONOSTICO'));
                 }
-            } else if (state.business.toUpperCase() === 'ABIMAR') {
-                if (keyword.toLowerCase() === 'servicio') {
-                    return filtered.find(d => d.indicador.toLowerCase().includes('servicio nacional')) || filtered.find(d => d.indicador.toLowerCase().includes('servicio'));
+            } else if (currentBiz === 'ABIMAR') {
+                if (kw.includes('SERVICIO')) {
+                    return filtered.find(d => cleanText(d.indicador).includes('SERVICIO NACIONAL')) || filtered.find(d => cleanText(d.indicador).includes('SERVICIO'));
                 }
-                if (keyword.toLowerCase().includes('pronóstico') || keyword.toLowerCase().includes('pronostico')) {
-                    return filtered.find(d => d.indicador.toLowerCase().includes('pronóstico consolidado abimar')) || filtered.find(d => d.indicador.toLowerCase().includes('pronóstico'));
+                if (kw.includes('PRONOSTICO')) {
+                    return filtered.find(d => cleanText(d.indicador).includes('PRONOSTICO CONSOLIDADO ABIMAR')) || filtered.find(d => cleanText(d.indicador).includes('PRONOSTICO'));
                 }
-            } else if (state.business.toUpperCase() === 'POZUELO') {
-                if (keyword.toLowerCase() === 'servicio') {
-                    const exact = filtered.find(d => d.indicador.trim().toLowerCase() === 'nivel de servicio');
+            } else if (currentBiz === 'POZUELO') {
+                if (kw.includes('SERVICIO')) {
+                    const exact = filtered.find(d => cleanText(d.indicador) === 'NIVEL DE SERVICIO');
                     if (exact) return exact;
                 }
-                if (keyword.toLowerCase() === 'agotados') {
-                    const exact = filtered.find(d => d.indicador.trim().toLowerCase() === '% de agotados' || d.indicador.trim().toLowerCase() === 'agotados');
+                if (kw.includes('AGOTADOS')) {
+                    const exact = filtered.find(d => cleanText(d.indicador) === '% DE AGOTADOS' || cleanText(d.indicador) === 'AGOTADOS');
                     if (exact) return exact;
                 }
-            } else if (state.business.toUpperCase() === 'YUPI COLOMBIA') {
-                if (keyword.toLowerCase().includes('pronóstico') || keyword.toLowerCase().includes('pronostico')) {
-                    return filtered.find(d => d.indicador.toLowerCase().includes('pronóstico consolidado yupi')) || filtered.find(d => d.indicador.toLowerCase().includes('pronóstico'));
+            } else if (currentBiz === 'YUPI COLOMBIA') {
+                if (kw.includes('PRONOSTICO')) {
+                    return filtered.find(d => cleanText(d.indicador).includes('PRONOSTICO CONSOLIDADO YUPI')) || filtered.find(d => cleanText(d.indicador).includes('PRONOSTICO'));
                 }
-            } else if (state.business.toUpperCase().includes('TRESMONTES')) {
-                if (keyword.toLowerCase() === 'servicio') {
-                    const exact = filtered.find(d => d.indicador.trim().toLowerCase() === 'nivel de servicio' || d.indicador.toLowerCase().includes('consolidado'));
+            } else if (currentBiz.includes('TRESMONTES') || currentBiz === 'TMLUC') {
+                if (kw.includes('SERVICIO')) {
+                    const exact = filtered.find(d => cleanText(d.indicador) === 'NIVEL DE SERVICIO' || cleanText(d.indicador).includes('CONSOLIDADO'));
                     if (exact) return exact;
                 }
-                if (keyword.toLowerCase().includes('pronóstico') || keyword.toLowerCase().includes('pronostico')) {
-                    const exact = filtered.find(d => d.indicador.toLowerCase().includes('consolidado') || d.indicador.toLowerCase() === 'error de pronóstico' || d.indicador.toLowerCase() === '% error del pronóstico');
+                if (kw.includes('PRONOSTICO')) {
+                    const exact = filtered.find(d => cleanText(d.indicador).includes('CONSOLIDADO') || cleanText(d.indicador) === 'ERROR DE PRONOSTICO' || cleanText(d.indicador) === '% ERROR DEL PRONOSTICO');
                     if (exact) return exact;
                 }
             }
 
-            if (keyword.toLowerCase().includes('total')) {
-                return filtered.find(d => d.indicador.toLowerCase().includes('total') || d.indicador.toLowerCase().includes('(pt+me+mp)'));
+            if (kw.includes('TOTAL') || kw.includes('INVENTARIO')) {
+                return filtered.find(d => cleanText(d.indicador).includes('TOTAL') || cleanText(d.indicador).includes('(PT+ME+MP)'));
             }
 
-            const matches = filtered.filter(d => d.indicador.toLowerCase().includes(keyword.toLowerCase()));
-            if (matches.length > 1 && state.business.toUpperCase() !== 'CONSOLIDADO') {
-                const nac = matches.find(d => d.indicador.toLowerCase().includes('nacional'));
+            const matches = filtered.filter(d => cleanText(d.indicador).includes(kw));
+            if (matches.length > 1 && currentBiz !== 'CONSOLIDADO') {
+                const nac = matches.find(d => cleanText(d.indicador).includes('NACIONAL'));
                 if (nac) return nac;
             }
             return matches[0];
@@ -1059,31 +1163,28 @@
         }
 
         function getConsolidatedCardBreakdownHTML(keyword, period) {
-            let items = allData.filter(d => d.negocio.toUpperCase() !== 'CONSOLIDADO');
-            if (['PT', 'ME', 'MP'].includes(keyword.toUpperCase())) {
-                items = items.filter(d => !d.indicador.toLowerCase().includes('total') && d.indicador.toUpperCase().includes(keyword.toUpperCase()));
-            } else if (keyword.toLowerCase().includes('total')) {
-                items = items.filter(d => d.indicador.toLowerCase().includes('total') || d.indicador.toLowerCase().includes('(pt+me+mp)'));
+            let items = allData.filter(d => cleanText(d.negocio) !== 'CONSOLIDADO');
+            const kw = cleanText(keyword);
+            if (['PT', 'ME', 'MP'].includes(kw)) {
+                items = items.filter(d => !cleanText(d.indicador).includes('TOTAL') && cleanText(d.indicador).includes(kw));
+            } else if (kw.includes('TOTAL')) {
+                items = items.filter(d => cleanText(d.indicador).includes('TOTAL') || cleanText(d.indicador).includes('(PT+ME+MP)'));
             } else {
-                items = items.filter(d => d.indicador.toLowerCase().includes(keyword.toLowerCase()));
+                items = items.filter(d => cleanText(d.indicador).includes(kw));
             }
 
             const busMap = {};
             items.forEach(it => {
-                const bkey = it.negocio.trim().toUpperCase();
-                const indName = it.indicador.toLowerCase();
-                if (!busMap[bkey]) {
-                    busMap[bkey] = it;
-                } else {
-                    const currInd = busMap[bkey].indicador.toLowerCase();
-                    if (indName.includes('nacional') && !currInd.includes('nacional')) busMap[bkey] = it;
-                }
+                const bkey = cleanText(it.negocio);
+                const indName = cleanText(it.indicador);
+                if (!busMap[bkey]) busMap[bkey] = it;
+                else if (indName.includes('NACIONAL') && !cleanText(busMap[bkey].indicador).includes('NACIONAL')) busMap[bkey] = it;
             });
 
             const uniqueItems = Object.values(busMap);
             uniqueItems.sort((a, b) => {
-                const normA = a.negocio.trim().toUpperCase();
-                const normB = b.negocio.trim().toUpperCase();
+                const normA = cleanText(a.negocio);
+                const normB = cleanText(b.negocio);
                 let idxA = DESIRED_BUSINESS_ORDER.findIndex(o => normA.includes(o) || o.includes(normA));
                 let idxB = DESIRED_BUSINESS_ORDER.findIndex(o => normB.includes(o) || o.includes(normB));
                 if (idxA === -1) idxA = 99;
@@ -1091,7 +1192,7 @@
                 return idxA - idxB;
             });
 
-            const isP = !['PT', 'ME', 'MP', 'INVENTARIO'].some(k => keyword.toUpperCase().includes(k));
+            const isP = !['PT', 'ME', 'MP', 'INVENTARIO'].some(k => kw.includes(k));
 
             return uniqueItems.map(it => {
                 const val = (period === 'ACUM AÑO 2026' || period === 'ACUM') ? it.acum : it.mensual[period];
@@ -1111,27 +1212,28 @@
         }
 
         function getConsolidatedBreakdown(keyword, month, isP) {
-            let items = allData.filter(d => d.negocio.toUpperCase() !== 'CONSOLIDADO');
-            if (['PT', 'ME', 'MP'].includes(keyword.toUpperCase())) {
-                items = items.filter(d => !d.indicador.toLowerCase().includes('total') && d.indicador.toUpperCase().includes(keyword.toUpperCase()));
-            } else if (keyword.toLowerCase().includes('total')) {
-                items = items.filter(d => d.indicador.toLowerCase().includes('total') || d.indicador.toLowerCase().includes('(pt+me+mp)'));
+            let items = allData.filter(d => cleanText(d.negocio) !== 'CONSOLIDADO');
+            const kw = cleanText(keyword);
+            if (['PT', 'ME', 'MP'].includes(kw)) {
+                items = items.filter(d => !cleanText(d.indicador).includes('TOTAL') && cleanText(d.indicador).includes(kw));
+            } else if (kw.includes('TOTAL')) {
+                items = items.filter(d => cleanText(d.indicador).includes('TOTAL') || cleanText(d.indicador).includes('(PT+ME+MP)'));
             } else {
-                items = items.filter(d => d.indicador.toLowerCase().includes(keyword.toLowerCase()));
+                items = items.filter(d => cleanText(d.indicador).includes(kw));
             }
 
             const busMap = {};
             items.forEach(it => {
-                const bkey = it.negocio.trim().toUpperCase();
-                const indName = it.indicador.toLowerCase();
+                const bkey = cleanText(it.negocio);
+                const indName = cleanText(it.indicador);
                 if (!busMap[bkey]) busMap[bkey] = it;
-                else if (indName.includes('nacional') && !busMap[bkey].indicador.toLowerCase().includes('nacional')) busMap[bkey] = it;
+                else if (indName.includes('NACIONAL') && !cleanText(busMap[bkey].indicador).includes('NACIONAL')) busMap[bkey] = it;
             });
 
             const uniqueItems = Object.values(busMap);
             uniqueItems.sort((a, b) => {
-                const normA = a.negocio.trim().toUpperCase();
-                const normB = b.negocio.trim().toUpperCase();
+                const normA = cleanText(a.negocio);
+                const normB = cleanText(b.negocio);
                 let idxA = DESIRED_BUSINESS_ORDER.findIndex(o => normA.includes(o) || o.includes(normA));
                 let idxB = DESIRED_BUSINESS_ORDER.findIndex(o => normB.includes(o) || o.includes(normB));
                 if (idxA === -1) idxA = 99;
@@ -1148,27 +1250,28 @@
         }
 
         function getConsolidatedMetaBreakdown(keyword, isP) {
-            let items = allData.filter(d => d.negocio.toUpperCase() !== 'CONSOLIDADO');
-            if (['PT', 'ME', 'MP'].includes(keyword.toUpperCase())) {
-                items = items.filter(d => !d.indicador.toLowerCase().includes('total') && d.indicador.toUpperCase().includes(keyword.toUpperCase()));
-            } else if (keyword.toLowerCase().includes('total')) {
-                items = items.filter(d => d.indicador.toLowerCase().includes('total') || d.indicador.toLowerCase().includes('(pt+me+mp)'));
+            let items = allData.filter(d => cleanText(d.negocio) !== 'CONSOLIDADO');
+            const kw = cleanText(keyword);
+            if (['PT', 'ME', 'MP'].includes(kw)) {
+                items = items.filter(d => !cleanText(d.indicador).includes('TOTAL') && cleanText(d.indicador).includes(kw));
+            } else if (kw.includes('TOTAL')) {
+                items = items.filter(d => cleanText(d.indicador).includes('TOTAL') || cleanText(d.indicador).includes('(PT+ME+MP)'));
             } else {
-                items = items.filter(d => d.indicador.toLowerCase().includes(keyword.toLowerCase()));
+                items = items.filter(d => cleanText(d.indicador).includes(kw));
             }
 
             const busMap = {};
             items.forEach(it => {
-                const bkey = it.negocio.trim().toUpperCase();
-                const indName = it.indicador.toLowerCase();
+                const bkey = cleanText(it.negocio);
+                const indName = cleanText(it.indicador);
                 if (!busMap[bkey]) busMap[bkey] = it;
-                else if (indName.includes('nacional') && !busMap[bkey].indicador.toLowerCase().includes('nacional')) busMap[bkey] = it;
+                else if (indName.includes('NACIONAL') && !cleanText(busMap[bkey].indicador).includes('NACIONAL')) busMap[bkey] = it;
             });
 
             const uniqueItems = Object.values(busMap);
             uniqueItems.sort((a, b) => {
-                const normA = a.negocio.trim().toUpperCase();
-                const normB = b.negocio.trim().toUpperCase();
+                const normA = cleanText(a.negocio);
+                const normB = cleanText(b.negocio);
                 let idxA = DESIRED_BUSINESS_ORDER.findIndex(o => normA.includes(o) || o.includes(normA));
                 let idxB = DESIRED_BUSINESS_ORDER.findIndex(o => normB.includes(o) || o.includes(normB));
                 if (idxA === -1) idxA = 99;
@@ -1188,25 +1291,27 @@
             let labelAgotados = '% de Agotados';
             let labelPronostico = 'Pronóstico (% Error)';
 
-            if (state.business.toUpperCase() === 'NOEL') {
+            const b = cleanText(state.business);
+
+            if (b === 'NOEL') {
                 labelServicio = 'Nivel de Servicio (NS Nacional e Internacional)';
                 labelAgotados = '% de Agotados (Comercial Nutresa)';
                 labelPronostico = 'Pronóstico (% Error) (MAPE Nacional e Internacional)';
-            } else if (state.business.toUpperCase() === 'ABIMAR') {
+            } else if (b === 'ABIMAR') {
                 labelServicio = 'Nivel de Servicio (NS Nacional)';
                 labelPronostico = 'Pronóstico (% Error) (MAPE Nacional e Internacional)';
-            } else if (state.business.toUpperCase() === 'POZUELO') {
+            } else if (b === 'POZUELO') {
                 labelServicio = 'Nivel de Servicio (CAM)';
                 labelPronostico = 'Pronóstico (% Error) (MAPE CAM)';
-            } else if (state.business.toUpperCase() === 'ALIMENTOS DORIA' || state.business.toUpperCase() === 'DORIA') {
+            } else if (b === 'ALIMENTOS DORIA' || b === 'DORIA') {
                 labelServicio = 'Nivel de Servicio (NS Nacional)';
                 labelAgotados = '% de Agotados (Comercial Nutresa)';
                 labelPronostico = 'Pronóstico (% Error) (MAPE Nacional)';
-            } else if (state.business.toUpperCase() === 'YUPI COLOMBIA') {
+            } else if (b === 'YUPI COLOMBIA') {
                 labelServicio = 'Nivel de Servicio (Comercial Nutresa)';
                 labelAgotados = '% de Agotados (Comercial Nutresa)';
                 labelPronostico = 'Pronóstico (% Error) (MAPE Nacional e Internacional)';
-            } else if (state.business.toUpperCase() === 'YUPI ECUADOR') {
+            } else if (b === 'YUPI ECUADOR') {
                 labelServicio = 'Nivel de Servicio (Cordialsa Ecuador)';
                 labelAgotados = '% de Agotados (Cordialsa Ecuador)';
             }
@@ -1274,17 +1379,18 @@
                 let tooltipBadge = '';
                 let tooltipPopup = '';
 
-                let isNoelDesglose = (keyword === 'Servicio' || keyword === 'Pronóstico') && state.business.toUpperCase() === 'NOEL';
-                let isAbimarDesglose = keyword === 'Pronóstico' && state.business.toUpperCase() === 'ABIMAR';
-                let isPozueloDesglose = (keyword === 'Servicio' || keyword === 'Pronóstico') && state.business.toUpperCase() === 'POZUELO';
-                let isPozueloAgotados = keyword === 'Agotados' && state.business.toUpperCase() === 'POZUELO';
-                let isYupiDesglose = keyword === 'Pronóstico' && state.business.toUpperCase() === 'YUPI COLOMBIA';
-                let isTmlucDesglose = (keyword === 'Servicio' || keyword === 'Pronóstico') && state.business.toUpperCase().includes('TRESMONTES');
+                const b = cleanText(state.business);
+                let isNoelDesglose = (keyword === 'Servicio' || keyword === 'Pronóstico') && b === 'NOEL';
+                let isAbimarDesglose = keyword === 'Pronóstico' && b === 'ABIMAR';
+                let isPozueloDesglose = (keyword === 'Servicio' || keyword === 'Pronóstico') && b === 'POZUELO';
+                let isPozueloAgotados = keyword === 'Agotados' && b === 'POZUELO';
+                let isYupiDesglose = keyword === 'Pronóstico' && b === 'YUPI COLOMBIA';
+                let isTmlucDesglose = (keyword === 'Servicio' || keyword === 'Pronóstico') && (b.includes('TRESMONTES') || b === 'TMLUC');
 
                 if (isNoelDesglose) {
-                    const filtered = allData.filter(d => d.negocio.toUpperCase() === 'NOEL' && d.indicador.toLowerCase().includes(keyword.toLowerCase()));
-                    const nac = filtered.find(d => d.indicador.toLowerCase().includes('nacional') && !d.indicador.toLowerCase().includes('consolidado'));
-                    const int = filtered.find(d => d.indicador.toLowerCase().includes('internacional'));
+                    const filtered = allData.filter(d => cleanText(d.negocio) === 'NOEL' && cleanText(d.indicador).includes(cleanText(keyword)));
+                    const nac = filtered.find(d => cleanText(d.indicador).includes('NACIONAL') && !cleanText(d.indicador).includes('CONSOLIDADO'));
+                    const int = filtered.find(d => cleanText(d.indicador).includes('INTERNACIONAL'));
                     if (nac && int) {
                         const vNac = state.period === 'ACUM AÑO 2026' ? nac.acum : nac.mensual[state.period];
                         const vInt = state.period === 'ACUM AÑO 2026' ? int.acum : int.mensual[state.period];
@@ -1300,9 +1406,9 @@
                     }
                 } else if (isAbimarDesglose || isYupiDesglose) {
                     const biz = isAbimarDesglose ? 'ABIMAR' : 'YUPI COLOMBIA';
-                    const filtered = allData.filter(d => d.negocio.toUpperCase() === biz && d.indicador.toLowerCase().includes('pronóstico'));
-                    const nac = filtered.find(d => d.indicador.toLowerCase().includes('nacional') && !d.indicador.toLowerCase().includes('consolidado'));
-                    const int = filtered.find(d => d.indicador.toLowerCase().includes('internacional'));
+                    const filtered = allData.filter(d => cleanText(d.negocio) === biz && cleanText(d.indicador).includes('PRONOSTICO'));
+                    const nac = filtered.find(d => cleanText(d.indicador).includes('NACIONAL') && !cleanText(d.indicador).includes('CONSOLIDADO'));
+                    const int = filtered.find(d => cleanText(d.indicador).includes('INTERNACIONAL'));
                     if (nac && int) {
                         const vNac = state.period === 'ACUM AÑO 2026' ? nac.acum : nac.mensual[state.period];
                         const vInt = state.period === 'ACUM AÑO 2026' ? int.acum : int.mensual[state.period];
@@ -1372,7 +1478,7 @@
             if (charts[id]) charts[id].destroy();
 
             const enConst = isEnConstruccion(item);
-            const realData = state.months.map(m => Number(Number(isP ? item.mensual[m] * 100 : item.mensual[m]).toFixed(isP ? 2 : 1)));
+            const realData = state.months.map(m => Number(Number(isP ? (item.mensual[m] || 0) * 100 : (item.mensual[m] || 0)).toFixed(isP ? 2 : 1)));
             const metaData = state.months.map(() => Number(Number(isP ? item.meta * 100 : item.meta).toFixed(isP ? 2 : 1)));
 
             charts[id] = new Chart(ctx, {
@@ -1470,9 +1576,11 @@
         function renderInventarios() {
             const keys = ['PT', 'ME', 'MP'];
             const labels = ['P. Terminado (PT)', 'M. Empaque (ME)', 'M. Prima (MP)'];
+            const currentBiz = cleanText(state.business);
+
             const dataItems = keys.map(k => {
-               const filtered = allData.filter(d => d.negocio.toUpperCase() === state.business.toUpperCase() && !d.indicador.toLowerCase().includes('total'));
-               return filtered.find(d => d.indicador.toUpperCase().includes(k));
+               const filtered = allData.filter(d => cleanText(d.negocio) === currentBiz && !cleanText(d.indicador).includes('TOTAL'));
+               return filtered.find(d => cleanText(d.indicador).includes(k));
             });
             
             const ctx = document.getElementById('chart-inventario').getContext('2d');
