@@ -1,0 +1,1557 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Control Logístico Consolidado 2026</title>
+    
+    <!-- TAILWIND CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- CHART.JS Y DATALABELS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; color: #1e293b; }
+        
+        .sidebar-item { transition: all 0.2s ease; cursor: pointer; border-radius: 8px; }
+        .sidebar-item:hover { background-color: #f3f4f6; }
+        .sidebar-item.active { background-color: #1e3a8a; color: white; }
+        
+        .kpi-card { background: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); padding: 1.25rem; }
+        .section-header { background-color: #1e3a8a; color: white; padding: 8px 16px; border-radius: 4px; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        
+        .loading-overlay { position: fixed; inset: 0; background: #f1f5f9; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+        .chart-container { position: relative; width: 100%; }
+
+        @media (max-width: 1024px) {
+            .main-layout { flex-direction: column; overflow-y: auto; height: auto; }
+            .sidebar-nav { width: 100%; height: auto; border-right: none; border-bottom: 1px solid #e2e8f0; }
+            .sidebar-list-container { flex-direction: row; overflow-x: auto; padding: 12px; white-space: nowrap; gap: 8px; }
+            .sidebar-item { margin: 0; padding: 10px 18px; display: inline-flex; min-width: max-content; align-items: center; justify-content: center; }
+            .hide-mobile { display: none; }
+            .p-mobile-adjust { padding: 1rem !important; }
+            .gap-mobile-adjust { gap: 1rem !important; }
+        }
+    </style>
+</head>
+<body class="flex flex-col lg:flex-row h-screen overflow-hidden main-layout">
+
+    <div id="loading" class="loading-overlay">
+        <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-900 mb-4"></div>
+        <p id="loading-msg" class="font-bold text-blue-900 uppercase tracking-widest text-xs text-center">Cargando Tablero Logístico 2026...</p>
+    </div>
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar-nav w-full lg:w-72 bg-white lg:border-r border-gray-200 flex flex-col shrink-0">
+        <div class="p-4 lg:p-8 border-b border-gray-100 flex lg:flex-col items-center justify-between lg:justify-center">
+            <div class="flex flex-col items-center w-full">
+                <h1 class="text-base lg:text-lg font-black text-gray-800 tracking-tight leading-tight mb-2 lg:mb-4 text-center">Dashboard Logístico 2026</h1>
+                <div class="flex items-center lg:flex-col lg:justify-center">
+                    <img id="side-logo" src="" class="h-10 lg:h-12 mb-0 lg:mb-2 object-contain mr-3 lg:mr-0">
+                    <h2 class="text-[10px] font-black text-gray-400 uppercase tracking-tighter text-center">Control Logístico</h2>
+                </div>
+            </div>
+        </div>
+        <div id="sidebar-list" class="sidebar-list-container flex lg:flex-col flex-1 overflow-y-auto lg:py-4 no-scrollbar"></div>
+        <div class="p-4 border-t border-gray-100 mt-auto flex flex-col items-center hide-mobile">
+            <img id="bottom-logo" src="" class="h-6 opacity-40 mb-1">
+            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Grupo Nutresa</span>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 flex flex-col overflow-y-auto lg:overflow-hidden">
+        <!-- HEADER -->
+        <header class="h-auto lg:h-20 bg-white border-b border-gray-200 flex flex-col lg:flex-row items-center justify-between p-4 lg:px-10 shrink-0 gap-4">
+            <div class="flex flex-col items-start justify-center w-full lg:w-auto space-y-1">
+                <div class="flex bg-gray-100 p-1 rounded-xl w-full lg:w-auto overflow-x-auto no-scrollbar">
+                    <button id="btn-tab-kpi" onclick="setTab('KPI')" class="px-4 lg:px-5 py-1.5 rounded-lg text-[9px] lg:text-[10px] font-black tracking-widest bg-white shadow-sm text-blue-900 whitespace-nowrap transition-all">KPIS LOGÍSTICOS</button>
+                    <button id="btn-tab-ton" onclick="setTab('TONELADAS')" class="px-4 lg:px-5 py-1.5 rounded-lg text-[9px] lg:text-[10px] font-black tracking-widest text-gray-500 whitespace-nowrap transition-all">TONELADAS GPS</button>
+                </div>
+                <p id="current-view-text" class="text-[10px] lg:text-xs text-blue-600 font-bold ml-1 uppercase transition-all duration-300">Consolidado</p>
+            </div>
+            <div id="period-filters" class="flex bg-gray-100 p-1 rounded-xl overflow-x-auto w-full lg:w-auto no-scrollbar scroll-smooth"></div>
+        </header>
+
+        <!-- Tablero Principal -->
+        <div class="flex-1 overflow-y-auto p-4 lg:p-10 p-mobile-adjust gap-mobile-adjust">
+            
+            <!-- VISTA KPI -->
+            <div id="kpi-view" class="space-y-8 lg:space-y-10">
+                <div id="summary-block" class="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6"></div>
+                <div class="space-y-4">
+                    <div id="header-servicio" class="section-header">Nivel de Servicio</div>
+                    <div class="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
+                        <div id="service-cards" class="lg:col-span-4 flex flex-col gap-4"></div>
+                        <div class="lg:col-span-8 bg-white p-3 lg:p-6 rounded-xl border border-gray-100 shadow-sm chart-container" style="height: 350px;">
+                            <canvas id="chart-service"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <div id="header-agotados" class="section-header">% de Agotados</div>
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
+                        <div id="agotados-cards" class="lg:col-span-4 flex flex-col gap-4"></div>
+                        <div class="lg:col-span-8 bg-white p-3 lg:p-6 rounded-xl border border-gray-100 shadow-sm chart-container" style="height: 350px;">
+                            <canvas id="chart-agotados"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <div id="header-pronostico" class="section-header">Pronóstico (% Error)</div>
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
+                        <div id="pronostico-cards" class="lg:col-span-4 flex flex-col gap-4"></div>
+                        <div class="col-span-8 bg-white p-3 lg:p-6 rounded-xl border border-gray-100 shadow-sm chart-container" style="height: 350px;">
+                            <canvas id="chart-pronostico"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <div id="header-inventario" class="section-header">Días de Inventario</div>
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
+                        <div class="lg:col-span-8 bg-white p-3 lg:p-6 rounded-xl border border-gray-100 shadow-sm order-2 lg:order-1 chart-container" style="height: 350px;">
+                            <canvas id="chart-inventario"></canvas>
+                        </div>
+                        <div id="inventario-cards" class="lg:col-span-4 flex flex-col gap-4 justify-center order-1 lg:order-2"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VISTA TONELADAS -->
+            <div id="ton-view" class="hidden space-y-6">
+                <div id="ton-submenu-container"></div>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
+                    <div class="lg:col-span-3 flex flex-col gap-4" id="ton-total-card-container"></div>
+                    <div class="lg:col-span-9 bg-white p-4 rounded-xl shadow-sm border border-gray-100 chart-container" style="height: 300px;">
+                        <h3 class="text-sm font-bold text-center text-gray-700 mb-2">Toneladas producidas - Comportamiento mensual</h3>
+                        <canvas id="chart-ton-trend"></canvas>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
+                    <div class="lg:col-span-5 bg-white p-4 rounded-xl shadow-sm border border-gray-100 overflow-x-auto" style="max-height: 400px;">
+                        <h3 class="text-sm font-bold text-center text-gray-700 mb-4">Toneladas producidas por año</h3>
+                        <div id="ton-summary-table"></div>
+                    </div>
+                    <div class="lg:col-span-7 bg-white p-4 rounded-xl shadow-sm border border-gray-100 chart-container" style="height: 400px;">
+                        <h3 class="text-sm font-bold text-center text-gray-700 mb-2">Toneladas producidas por <span id="ton-ranking-title">plataforma</span></h3>
+                        <canvas id="chart-ton-ranking"></canvas>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-2 lg:p-4 overflow-x-auto">
+                    <div class="flex justify-between items-center mb-4 px-2">
+                        <h3 class="text-sm font-bold text-gray-700">Detalle Mensual</h3>
+                        <div class="flex items-center gap-2">
+                            <span class="inline-block w-3 h-3 rounded bg-[#f59e0b] border border-[#d97706]"></span>
+                            <span class="text-[10px] font-black text-gray-500 uppercase tracking-widest">PROYECCIÓN</span>
+                        </div>
+                    </div>
+                    <div id="ton-detail-table"></div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // CONFIGURACIÓN DIRECTA DE HOJAS
+        const SPREADSHEET_ID = '1WnbpzqkQHPesiZBHS_82NKXbyQJ5D-IXYKwzWOFKkSo';
+        const GID_INDICADORES = '1446461546';
+        const GID_TONELADAS = '1275567452';
+        const GID_CONFIG = '1767009808';
+
+        if (typeof ChartDataLabels !== 'undefined') {
+            Chart.register(ChartDataLabels);
+        }
+
+        const BRAND_BANNER_URL = "https://lh3.googleusercontent.com/d/1sCP7ggaX_mkH1U8QWGvu1D7r4o_q16FE";
+
+        const DESIRED_BUSINESS_ORDER = [
+            'NOEL',
+            'ABIMAR',
+            'POZUELO',
+            'GCFOODS',
+            'ALIMENTOS DORIA',
+            'DORIA',
+            'YUPI COLOMBIA',
+            'YUPI ECUADOR',
+            'TRESMONTES LUCCHETTI',
+            'TRESMONTES LUCHETTI',
+            'TMLUC'
+        ];
+
+        let allData = [];
+        let allTonData = {}; 
+        let state = { business: 'CONSOLIDADO', period: 'ACUM AÑO 2026', months: [] };
+        let currentTab = 'KPI'; 
+        let charts = {};
+        let mesCierreActual = new Date().getMonth() - 1;
+
+        // LECTOR DIRECTO DE GOOGLE SHEETS (SIN APPS SCRIPT)
+        function fetchSheetData(gid) {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'gviz_cb_' + Math.floor(Math.random() * 100000000);
+                let script = null;
+
+                const timer = setTimeout(() => {
+                    cleanup();
+                    reject(new Error("Tiempo de espera agotado al leer la hoja."));
+                }, 15000);
+
+                function cleanup() {
+                    clearTimeout(timer);
+                    try { delete window[callbackName]; } catch(e) { window[callbackName] = undefined; }
+                    if (script && script.parentNode) script.parentNode.removeChild(script);
+                }
+
+                window[callbackName] = function(resp) {
+                    cleanup();
+                    if (!resp || resp.status === 'error') {
+                        const m = (resp && resp.errors && resp.errors[0]) ? resp.errors[0].message : 'Error desconocido';
+                        reject(new Error(m));
+                        return;
+                    }
+                    resolve(resp.table);
+                };
+
+                script = document.createElement('script');
+                script.src = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=responseHandler:${callbackName}&gid=${gid}&headers=0`;
+                script.onerror = () => {
+                    cleanup();
+                    reject(new Error("No se pudo conectar con la hoja. Revisa que el enlace tenga permiso 'Cualquier persona con el vínculo puede ver'."));
+                };
+                document.body.appendChild(script);
+            });
+        }
+
+        function tableToMatrix(t) {
+            if (!t || !t.rows || t.rows.length === 0) return [];
+            let mat = [];
+            for (let i = 0; i < t.rows.length; i++) {
+                const r = t.rows[i];
+                if (!r || !r.c) continue;
+                mat.push(r.c.map(cell => (cell && cell.v !== null && cell.v !== undefined) ? cell.v : ''));
+            }
+            return mat;
+        }
+
+        // PROCESADOR DE DATOS INTEGRADO
+        async function loadAndProcessData() {
+            const [rawInd, rawConfig, rawTon] = await Promise.all([
+                fetchSheetData(GID_INDICADORES),
+                fetchSheetData(GID_CONFIG).catch(() => null),
+                fetchSheetData(GID_TONELADAS).catch(() => null)
+            ]);
+
+            const data = tableToMatrix(rawInd);
+            if (data.length < 2) throw new Error("La hoja 'Indicadores Acum 2026' no contiene datos.");
+
+            const headers = data[0].map(h => String(h).trim().toUpperCase());
+            const rows = data.slice(1);
+
+            const colMap = {};
+            const monthCols = [];
+            const knownMonths = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"];
+
+            headers.forEach((h, i) => {
+                colMap[h] = i;
+                if (knownMonths.includes(h)) monthCols.push({ name: h, index: i });
+            });
+
+            if (!('NEGOCIO' in colMap)) throw new Error("No se encontró la columna 'NEGOCIO' en la hoja de indicadores.");
+
+            const businesses = {};
+            let nutresaLogo = 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/63/Logo_Nutresa.svg/1200px-Logo_Nutresa.svg.png';
+
+            let mesCierre = new Date().getMonth() - 1;
+            try {
+                if (rawConfig) {
+                    const dataCfg = tableToMatrix(rawConfig);
+                    if (dataCfg.length > 0 && dataCfg[0].length > 1) {
+                        const val = dataCfg[0][1];
+                        if (val !== '' && !isNaN(val)) mesCierre = parseInt(val) - 1;
+                    }
+                }
+            } catch(e) {}
+
+            const processedData = rows.map(row => {
+                const negocio = String(row[colMap['NEGOCIO']] || '').trim().toUpperCase();
+                const indicador = String(row[colMap['INDICADOR 2026']] || '').trim();
+                const meta = parseValue(row[colMap['META']]);
+                const img = String(row[colMap['IMÁGENES']] || '').trim();
+                const acum = parseValue(row[colMap['ACUM AÑO 2026']]);
+
+                if (negocio === 'CONSOLIDADO' && img) nutresaLogo = img;
+                if (negocio && negocio !== 'CONSOLIDADO' && !businesses[negocio]) {
+                    businesses[negocio] = img || '';
+                }
+
+                const item = { negocio, indicador, meta, img, acum, mensual: {} };
+                monthCols.forEach(m => { item.mensual[m.name] = parseValue(row[m.index]); });
+                return item;
+            });
+
+            // Promedio Noel
+            const noelNac = processedData.find(d => d.negocio === 'NOEL' && d.indicador.toUpperCase().includes('PRONÓSTICO NACIONAL'));
+            const noelInt = processedData.find(d => d.negocio === 'NOEL' && d.indicador.toUpperCase().includes('PRONÓSTICO INTERNACIONAL'));
+            if (noelNac && noelInt) {
+                const cNoel = {
+                    negocio: 'NOEL',
+                    indicador: '% Error del Pronóstico Consolidado Noel',
+                    meta: average([noelNac.meta, noelInt.meta]),
+                    img: noelNac.img,
+                    acum: average([noelNac.acum, noelInt.acum]),
+                    mensual: {}
+                };
+                monthCols.forEach(m => { cNoel.mensual[m.name] = average([noelNac.mensual[m.name], noelInt.mensual[m.name]]); });
+                processedData.push(cNoel);
+            }
+
+            // Promedio Yupi Colombia
+            const yupiNac = processedData.find(d => d.negocio === 'YUPI COLOMBIA' && d.indicador.toUpperCase().includes('PRONÓSTICO NACIONAL'));
+            const yupiInt = processedData.find(d => d.negocio === 'YUPI COLOMBIA' && (d.indicador.toUpperCase().includes('INTERNACIONAL') || d.indicador.toUpperCase().includes('INTERNACIONALES')) && d.indicador.toUpperCase().includes('PRONÓSTICO'));
+            if (yupiNac && yupiInt) {
+                const cYupi = {
+                    negocio: 'YUPI COLOMBIA',
+                    indicador: '% Error del Pronóstico Consolidado Yupi',
+                    meta: average([yupiNac.meta, yupiInt.meta]),
+                    img: yupiNac.img,
+                    acum: average([yupiNac.acum, yupiInt.acum]),
+                    mensual: {}
+                };
+                monthCols.forEach(m => { cYupi.mensual[m.name] = average([yupiNac.mensual[m.name], yupiInt.mensual[m.name]]); });
+                processedData.push(cYupi);
+            }
+
+            // Promedio ABIMAR
+            const abimarNac = processedData.find(d => d.negocio === 'ABIMAR' && d.indicador.toUpperCase().includes('PRONÓSTICO NACIONAL'));
+            const abimarInt = processedData.find(d => d.negocio === 'ABIMAR' && d.indicador.toUpperCase().includes('PRONÓSTICO INTERNACIONAL'));
+            if (abimarNac && abimarInt) {
+                const cAbimar = {
+                    negocio: 'ABIMAR',
+                    indicador: '% Error del Pronóstico Consolidado Abimar',
+                    meta: average([abimarNac.meta, abimarInt.meta]),
+                    img: abimarNac.img,
+                    acum: average([abimarNac.acum, abimarInt.acum]),
+                    mensual: {}
+                };
+                monthCols.forEach(m => { cAbimar.mensual[m.name] = average([abimarNac.mensual[m.name], abimarInt.mensual[m.name]]); });
+                processedData.push(cAbimar);
+            }
+
+            // Consolidado General
+            const uniqueInds = [...new Set(processedData.filter(d => d.negocio !== 'CONSOLIDADO').map(d => d.indicador))];
+            const consolidated = uniqueInds.map(ind => {
+                const matches = processedData.filter(d => d.indicador === ind && d.negocio !== 'CONSOLIDADO');
+                const cItem = {
+                    negocio: 'CONSOLIDADO',
+                    indicador: ind,
+                    meta: average(matches.map(m => m.meta)),
+                    img: nutresaLogo,
+                    acum: average(matches.map(m => m.acum)),
+                    mensual: {}
+                };
+                monthCols.forEach(m => { cItem.mensual[m.name] = average(matches.map(match => match.mensual[m.name])); });
+                return cItem;
+            });
+
+            // Toneladas GPS
+            let toneladasData = {};
+            try {
+                if (rawTon) {
+                    const dataTonRaw = tableToMatrix(rawTon);
+                    if (dataTonRaw.length > 1) {
+                        const headersTon = dataTonRaw[0].map(h => String(h).trim().toUpperCase());
+                        const idxNegocio = headersTon.indexOf('NEGOCIO');
+                        const idxMarca = headersTon.indexOf('MARCA'); 
+                        const idxMes = headersTon.indexOf('MES');
+                        const idx2025 = headersTon.indexOf('TON 2025');
+                        const idx2026 = headersTon.indexOf('TON 2026');
+                        const idx2027 = headersTon.indexOf('TON 2027');
+
+                        dataTonRaw.slice(1).forEach(row => {
+                            const negocio = idxNegocio >= 0 ? String(row[idxNegocio]).trim().toUpperCase() : '';
+                            let marca = idxMarca >= 0 ? String(row[idxMarca]).trim() : '';
+                            let mes = idxMes >= 0 ? String(row[idxMes]).trim() : '';
+                            
+                            if (!mes || !negocio) return;
+                            mes = mes.charAt(0).toUpperCase() + mes.slice(1).toLowerCase();
+
+                            const v25 = idx2025 >= 0 ? parseFloat(row[idx2025]) || 0 : 0;
+                            const v26 = idx2026 >= 0 ? parseFloat(row[idx2026]) || 0 : 0;
+                            const v27 = idx2027 >= 0 ? parseFloat(row[idx2027]) || 0 : 0;
+
+                            if (!toneladasData[negocio]) toneladasData[negocio] = { total: {}, marcas: {} };
+                            if (!toneladasData[negocio].total[mes]) toneladasData[negocio].total[mes] = { t25: 0, t26: 0, t27: 0 };
+                            toneladasData[negocio].total[mes].t25 += v25;
+                            toneladasData[negocio].total[mes].t26 += v26;
+                            toneladasData[negocio].total[mes].t27 += v27;
+
+                            if (marca) {
+                                marca = marca.toUpperCase();
+                                if (!toneladasData[negocio].marcas[marca]) toneladasData[negocio].marcas[marca] = {};
+                                if (!toneladasData[negocio].marcas[marca][mes]) toneladasData[negocio].marcas[marca][mes] = { t25: 0, t26: 0, t27: 0 };
+                                toneladasData[negocio].marcas[marca][mes].t25 += v25;
+                                toneladasData[negocio].marcas[marca][mes].t26 += v26;
+                                toneladasData[negocio].marcas[marca][mes].t27 += v27;
+                            }
+                        });
+                    }
+                }
+            } catch(e) {}
+
+            return {
+                data: [...processedData.filter(d => d.negocio !== 'CONSOLIDADO'), ...consolidated],
+                toneladasData,
+                businesses,
+                months: monthCols.map(m => m.name),
+                logoPrincipal: nutresaLogo,
+                mesCierre
+            };
+        }
+
+        window.onload = () => {
+            loadAndProcessData()
+                .then(res => {
+                    allData = res.data;
+                    allTonData = res.toneladasData || {};
+                    state.months = res.months;
+                    
+                    if (res.mesCierre !== undefined) mesCierreActual = res.mesCierre;
+                    if (res.logoPrincipal) {
+                        document.getElementById('side-logo').src = res.logoPrincipal;
+                        document.getElementById('bottom-logo').src = res.logoPrincipal;
+                    }
+                    
+                    renderSidebar(res.businesses);
+                    renderFilters();
+                    update();
+                    document.getElementById('loading').style.display = 'none';
+                })
+                .catch(err => {
+                    showCriticalError("Error de Carga", err.message);
+                });
+        };
+
+        window.toggleSubRows = function(className, btn) {
+            const rows = document.querySelectorAll('.' + className);
+            let isHidden = false;
+            rows.forEach(r => {
+                if (r.style.display === 'none') {
+                    r.style.display = 'table-row';
+                    isHidden = false;
+                } else {
+                    r.style.display = 'none';
+                    isHidden = true;
+                }
+            });
+            btn.innerText = isHidden ? '+' : '-';
+        };
+
+        function isProjection(year, monthIndex) {
+            if (year < 2026) return false;
+            if (year > 2026) return true;
+            return monthIndex > mesCierreActual; 
+        }
+
+        function showCriticalError(title, msg) {
+            document.getElementById('loading').innerHTML = `
+                <div class="bg-red-50 border-l-4 border-red-500 p-6 rounded-md shadow-xl max-w-lg mx-auto text-center">
+                    <h3 class="text-red-800 font-black text-xl uppercase tracking-wider">${title}</h3>
+                    <p class="text-red-600 mt-3 font-medium">${msg}</p>
+                    <p class="text-xs text-gray-500 mt-5 uppercase tracking-widest">Revisa que la hoja de Google Sheets esté configurada en "Cualquier persona con el vínculo".</p>
+                </div>
+            `;
+        }
+
+        function parseValue(val) {
+            if (val === null || val === undefined || val === '') return 0;
+            if (typeof val === 'number') return val;
+            let str = String(val).replace(/\s/g, '').replace(',', '.');
+            if (str.includes('%')) return parseFloat(str.replace('%', '')) / 100;
+            return parseFloat(str) || 0;
+        }
+
+        function average(arr) {
+            const f = arr.filter(v => v !== 0);
+            return f.length ? f.reduce((a, b) => a + b, 0) / f.length : 0;
+        }
+
+        function setTab(tab) {
+            currentTab = tab;
+            const btnKpi = document.getElementById('btn-tab-kpi');
+            const btnTon = document.getElementById('btn-tab-ton');
+            const kpiView = document.getElementById('kpi-view');
+            const tonView = document.getElementById('ton-view');
+            const periodFilters = document.getElementById('period-filters');
+
+            if (tab === 'KPI') {
+                btnKpi.classList.replace('text-gray-500', 'text-blue-900');
+                btnKpi.classList.add('bg-white', 'shadow-sm');
+                btnTon.classList.replace('text-blue-900', 'text-gray-500');
+                btnTon.classList.remove('bg-white', 'shadow-sm');
+                kpiView.style.display = 'block';
+                tonView.style.display = 'none';
+                periodFilters.style.visibility = 'visible';
+                update();
+            } else {
+                btnTon.classList.replace('text-gray-500', 'text-blue-900');
+                btnTon.classList.add('bg-white', 'shadow-sm');
+                btnKpi.classList.replace('text-blue-900', 'text-gray-500');
+                btnKpi.classList.remove('bg-white', 'shadow-sm');
+                kpiView.style.display = 'none';
+                tonView.style.display = 'block';
+                periodFilters.style.visibility = 'hidden'; 
+                renderToneladas();
+            }
+        }
+
+        function renderSidebar(bus) {
+            const list = document.getElementById('sidebar-list');
+            if(!bus) return;
+            
+            let h = `<div onclick="changeB('CONSOLIDADO')" class="sidebar-item active p-3 lg:p-4 flex items-center space-x-3 lg:mx-3" id="item-CONSOLIDADO">
+                        <img src="${BRAND_BANNER_URL}" class="w-8 h-8 lg:w-10 lg:h-10 object-contain shrink-0">
+                        <span class="font-black text-[10px] lg:text-sm uppercase">CONSOLIDADO</span>
+                    </div>`;
+
+            const sortedBusinessKeys = Object.keys(bus).sort((a, b) => {
+                const normA = a.trim().toUpperCase();
+                const normB = b.trim().toUpperCase();
+                let idxA = DESIRED_BUSINESS_ORDER.findIndex(o => normA.includes(o) || o.includes(normA));
+                let idxB = DESIRED_BUSINESS_ORDER.findIndex(o => normB.includes(o) || o.includes(normB));
+                if (idxA === -1) idxA = 99;
+                if (idxB === -1) idxB = 99;
+                return idxA - idxB;
+            });
+
+            for (let n of sortedBusinessKeys) {
+                h += `<div onclick="changeB('${n}')" class="sidebar-item p-2 lg:p-3 flex items-center space-x-3 lg:mx-3" id="item-${n.replace(/\s/g,'')}">
+                        <img src="${bus[n]}" class="w-6 h-6 lg:w-8 lg:h-8 object-contain rounded" onerror="this.src='https://via.placeholder.com/32'">
+                        <span class="text-[9px] lg:text-[11px] font-bold uppercase">${n}</span>
+                      </div>`;
+            }
+
+            h += `<div class="p-4 flex justify-center items-center my-3 lg:mx-3">
+                    <img src="${BRAND_BANNER_URL}" class="w-full max-w-[200px] h-auto object-contain">
+                  </div>`;
+
+            list.innerHTML = h;
+        }
+
+        function renderFilters() {
+            const c = document.getElementById('period-filters');
+            if(!state.months) return;
+            let h = `<button onclick="changeP('ACUM AÑO 2026')" class="px-4 lg:px-5 py-1.5 rounded-lg text-[9px] lg:text-[10px] font-black tracking-widest bg-white shadow-sm text-blue-900 whitespace-nowrap" id="btn-ACUM">ACUM AÑO</button>`;
+            state.months.forEach(m => h += `<button onclick="changeP('${m}')" class="px-4 lg:px-5 py-1.5 rounded-lg text-[9px] lg:text-[10px] font-black tracking-widest text-gray-500 whitespace-nowrap" id="btn-${m}">${m}</button>`);
+            c.innerHTML = h;
+        }
+
+        function changeB(n) {
+            document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
+            const sideBtn = document.getElementById('item-'+n.replace(/\s/g,''));
+            if(sideBtn) sideBtn.classList.add('active');
+            
+            state.business = n;
+            const titleEl = document.getElementById('current-view-text');
+            titleEl.style.opacity = 0;
+            setTimeout(() => {
+                titleEl.innerText = n === 'CONSOLIDADO' ? 'Consolidado General' : n;
+                titleEl.style.opacity = 1;
+            }, 150);
+            
+            if (currentTab === 'KPI') update();
+            else renderToneladas();
+            if(window.innerWidth < 1024) document.querySelector('main').scrollTo({top: 0, behavior: 'smooth'});
+        }
+
+        function changeP(p) {
+            document.querySelectorAll('#period-filters button').forEach(e => { e.classList.remove('bg-white', 'shadow-sm', 'text-blue-900'); e.classList.add('text-gray-500'); });
+            const bid = p === 'ACUM AÑO 2026' ? 'btn-ACUM' : 'btn-'+p;
+            const btn = document.getElementById(bid);
+            if(btn) btn.classList.add('bg-white', 'shadow-sm', 'text-blue-900');
+            state.period = p;
+            if (currentTab === 'KPI') update();
+        }
+
+        function calcVar(oldVal, newVal) {
+            if (!oldVal && !newVal) return 0;
+            if (!oldVal && newVal > 0) return 1; 
+            if (oldVal > 0 && !newVal) return -1; 
+            return (newVal / oldVal) - 1;
+        }
+
+        function renderToneladas() {
+            const submenuContainer = document.getElementById('ton-submenu-container');
+            if (!allTonData || Object.keys(allTonData).length === 0) {
+                submenuContainer.innerHTML = '<div class="flex items-center justify-center h-48 bg-white rounded-xl shadow-sm border border-gray-100"><p class="text-gray-500 font-bold uppercase tracking-widest text-xs">No hay datos de toneladas GPS disponibles aún.</p></div>';
+                document.getElementById('ton-total-card-container').innerHTML = '';
+                document.getElementById('ton-summary-table').innerHTML = '';
+                document.getElementById('ton-detail-table').innerHTML = '';
+                if(charts['chart-ton-trend']) charts['chart-ton-trend'].destroy();
+                if(charts['chart-ton-ranking']) charts['chart-ton-ranking'].destroy();
+                return;
+            }
+
+            const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+            const businessesWithData = Object.keys(allTonData).sort((a, b) => {
+                let idxA = DESIRED_BUSINESS_ORDER.indexOf(a);
+                let idxB = DESIRED_BUSINESS_ORDER.indexOf(b);
+                if (idxA === -1) idxA = 99;
+                if (idxB === -1) idxB = 99;
+                return idxA - idxB;
+            });
+
+            let subMenuHtml = `
+            <div class="bg-white p-3 lg:p-4 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-col md:flex-row md:items-center gap-4">
+                <button onclick="changeB('CONSOLIDADO')" class="px-5 py-2.5 rounded-lg text-[10px] lg:text-xs font-black tracking-wider transition-all shadow-sm ${state.business === 'CONSOLIDADO' ? 'bg-[#1e3a8a] text-white scale-105' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}">
+                    RESUMEN POR COMPAÑÍA
+                </button>
+                <div class="hidden md:block w-px h-8 bg-gray-200"></div>
+                <div class="flex flex-wrap gap-2 items-center flex-1">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mr-2">Ton por Marca:</span>
+            `;
+            
+            businessesWithData.forEach(b => {
+                const isActive = state.business === b;
+                let displayName = b;
+                if (b === 'ALIMENTOS DORIA' || b === 'DORIA') displayName = 'PASTAS';
+                if (b.includes('TRESMONTES')) displayName = 'TMLUC';
+                subMenuHtml += `<button onclick="changeB('${b}')" class="px-4 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-all shadow-sm ${isActive ? 'bg-[#70ad47] text-white scale-105' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}">${displayName}</button>`;
+            });
+
+            subMenuHtml += `</div></div>`;
+            submenuContainer.innerHTML = subMenuHtml;
+
+            let entities = [];
+            let grandT25 = new Array(12).fill(0);
+            let grandT26 = new Array(12).fill(0);
+            let grandT27 = new Array(12).fill(0);
+            let totalYear25 = 0, totalYear26 = 0, totalYear27 = 0;
+            let totalYear26_prod = 0, totalYear26_proj = 0;
+
+            const sourceData = state.business === 'CONSOLIDADO' ? allTonData : (allTonData[state.business]?.marcas || {});
+
+            Object.keys(sourceData).forEach(key => {
+                const dataObj = state.business === 'CONSOLIDADO' ? sourceData[key].total : sourceData[key];
+                let ent = { 
+                    name: key, 
+                    t25: 0, t26: 0, t27: 0, 
+                    t26_prod: 0, t26_proj: 0, 
+                    monthly: {},
+                    hasProj26: false,
+                    hasProj27: false
+                };
+                
+                months.forEach((m, idx) => {
+                    const vals = dataObj[m] || {t25:0, t26:0, t27:0};
+                    ent.monthly[m] = { t25: vals.t25, t26: vals.t26, t27: vals.t27 };
+                    ent.t25 += vals.t25 || 0;
+                    ent.t26 += vals.t26 || 0;
+                    ent.t27 += vals.t27 || 0;
+
+                    if (isProjection(2026, idx) && vals.t26 > 0) ent.hasProj26 = true;
+                    if (isProjection(2027, idx) && vals.t27 > 0) ent.hasProj27 = true;
+
+                    if (isProjection(2026, idx)) {
+                        ent.t26_proj += vals.t26 || 0;
+                        totalYear26_proj += vals.t26 || 0;
+                    } else {
+                        ent.t26_prod += vals.t26 || 0;
+                        totalYear26_prod += vals.t26 || 0;
+                    }
+
+                    grandT25[idx] += vals.t25 || 0;
+                    grandT26[idx] += vals.t26 || 0;
+                    grandT27[idx] += vals.t27 || 0;
+                });
+                
+                totalYear25 += ent.t25;
+                totalYear26 += ent.t26;
+                totalYear27 += ent.t27;
+                entities.push(ent);
+            });
+
+            entities.sort((a, b) => b.t26 - a.t26);
+
+            const fmt = v => (!v || isNaN(v) || v === 0) ? '-' : v.toLocaleString('es-CO', {maximumFractionDigits: 0});
+            const fmtPct = v => (v === null || v === undefined || isNaN(v)) ? '0%' : (v * 100).toFixed(2) + '%';
+            const currentMonthIdx = mesCierreActual; 
+
+            let projectedMonthsNames = [];
+            grandT26.forEach((val, idx) => {
+                if (isProjection(2026, idx) && val > 0) projectedMonthsNames.push(months[idx]);
+            });
+
+            const producedMonthName = currentMonthIdx >= 0 && currentMonthIdx < 12 ? months[currentMonthIdx] : 'Ninguno';
+            const projectedLabel = projectedMonthsNames.slice(0, 3).join(', ') + (projectedMonthsNames.length > 3 ? '...' : '');
+
+            document.getElementById('ton-total-card-container').innerHTML = `
+                <div class="kpi-card bg-white p-4 lg:p-5 rounded-xl border-t-4 border-[#004d40] shadow-sm flex flex-col justify-between h-full">
+                    <div class="mb-4">
+                        <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Total Toneladas 2026</p>
+                        <p class="text-2xl lg:text-3xl font-black text-[#004d40]">${fmt(totalYear26)}</p>
+                    </div>
+                    <div class="space-y-3 border-t border-gray-100 pt-4">
+                        <div>
+                            <p class="text-[9px] font-bold text-gray-500 uppercase leading-tight">Producidas <br/><span class="text-[8px] font-normal">(Cierre ${producedMonthName})</span></p>
+                            <p class="text-sm font-black text-gray-800">${fmt(totalYear26_prod)}</p>
+                        </div>
+                        <div>
+                            <p class="text-[9px] font-bold text-amber-600 uppercase leading-tight">Proyectadas <br/><span class="text-[8px] font-normal">(${projectedLabel})</span></p>
+                            <p class="text-sm font-black text-amber-700">${fmt(totalYear26_proj)}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('ton-ranking-title').innerText = state.business === 'CONSOLIDADO' ? 'Plataforma' : 'Marca';
+
+            const ctxTrend = document.getElementById('chart-ton-trend').getContext('2d');
+            if (charts['chart-ton-trend']) charts['chart-ton-trend'].destroy();
+            
+            const pointColors26 = months.map((m, i) => isProjection(2026, i) ? '#f59e0b' : '#8cbf39');
+            const pointColors27 = months.map((m, i) => isProjection(2027, i) ? '#f59e0b' : '#4ade80');
+
+            charts['chart-ton-trend'] = new Chart(ctxTrend, {
+                type: 'line',
+                data: {
+                    labels: months.map(m => m.substring(0,3).toLowerCase()),
+                    datasets: [
+                        {
+                            label: '2025',
+                            data: grandT25.map(v => v === 0 ? null : Number(v.toFixed(0))),
+                            borderColor: '#1f7a1f',
+                            backgroundColor: '#1f7a1f',
+                            borderWidth: 3,
+                            pointRadius: 4,
+                            tension: 0.1
+                        },
+                        {
+                            label: '2026',
+                            data: grandT26.map(v => v === 0 ? null : Number(v.toFixed(0))),
+                            segment: { borderColor: ctx => isProjection(2026, ctx.p1DataIndex) ? '#f59e0b' : '#8cbf39' },
+                            borderColor: '#8cbf39',
+                            backgroundColor: pointColors26,
+                            pointBorderColor: pointColors26,
+                            borderWidth: 3,
+                            pointRadius: 5,
+                            tension: 0.1
+                        },
+                        {
+                            label: '2027',
+                            data: grandT27.map(v => v === 0 ? null : Number(v.toFixed(0))),
+                            segment: { borderColor: ctx => isProjection(2027, ctx.p1DataIndex) ? '#f59e0b' : '#4ade80' },
+                            borderColor: '#4ade80',
+                            backgroundColor: pointColors27,
+                            pointBorderColor: pointColors27,
+                            borderWidth: 3,
+                            pointRadius: 5,
+                            tension: 0.1
+                        },
+                        {
+                            label: 'Proyección',
+                            data: [],
+                            borderColor: '#f59e0b',
+                            backgroundColor: '#f59e0b',
+                            borderWidth: 3,
+                            pointRadius: 5
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { 
+                            display: true, 
+                            position: 'top', 
+                            align: 'start', 
+                            labels: { 
+                                usePointStyle: true, 
+                                boxWidth: 8, 
+                                font: {weight: 'bold', size: 10},
+                                filter: item => !item.text.includes('2027')
+                            } 
+                        },
+                        datalabels: { display: false }
+                    },
+                    scales: {
+                        y: { beginAtZero: false, ticks: { color: '#64748b', font: {size: 10} }, grid: { borderDash: [2, 4], color: '#e2e8f0' } },
+                        x: { grid: { display: false }, ticks: { color: '#64748b', font: {size: 10} } }
+                    }
+                }
+            });
+
+            let sumHtml = `<table class="w-full text-xs text-right border-collapse">
+                <thead>
+                    <tr class="bg-[#004d40] text-white">
+                        <th class="p-2 border border-white text-left font-bold">${state.business === 'CONSOLIDADO' ? 'Plataforma' : 'Marca'}</th>
+                        <th class="p-2 border border-white font-bold leading-tight">Toneladas<br>producidas ▼<br><span class="text-[9px] text-amber-300 font-normal">Incluye proyecciones</span></th>
+                        <th class="p-2 border border-white font-bold">% Variación<br>25-26</th>
+                    </tr>
+                </thead><tbody>`;
+
+            entities.forEach((e, i) => {
+                const vPct25_26 = calcVar(e.t25, e.t26);
+                const class26 = e.hasProj26 ? 'text-amber-600' : 'text-gray-800';
+
+                sumHtml += `
+                <tr class="font-bold text-gray-800 border-b border-gray-200 bg-white">
+                    <td class="p-1.5 text-left flex items-center gap-1"><span class="text-[9px] font-normal border px-1 bg-gray-50 text-gray-600 shadow-sm">-</span> ${e.name}</td>
+                    <td class="p-1.5 font-bold"></td>
+                    <td class="p-1.5 font-bold"></td>
+                </tr>
+                <tr class="text-gray-600 bg-gray-50/50">
+                    <td class="p-1 text-left pl-6 flex items-center gap-1"><span class="text-[7px] font-normal border px-1 bg-white text-gray-400 shadow-sm">+</span> 2025</td>
+                    <td class="p-1">${fmt(e.t25)}</td>
+                    <td class="p-1">-</td>
+                </tr>
+                <tr class="text-gray-800 bg-gray-50/50 border-t border-gray-100 border-b border-gray-300">
+                    <td class="p-1 text-left pl-6 flex items-center gap-1">
+                        <button onclick="toggleSubRows('sub-26-${i}', this)" class="text-[7px] font-bold border border-gray-300 px-1 bg-white text-gray-600 shadow-sm cursor-pointer hover:bg-gray-200 transition-colors">-</button> 
+                        2026
+                    </td>
+                    <td class="p-1 font-bold ${class26}">${fmt(e.t26)}</td>
+                    <td class="p-1 font-bold ${class26}">${fmtPct(vPct25_26)}</td>
+                </tr>
+                <tr class="sub-26-${i} text-gray-500 bg-gray-50/30">
+                    <td class="p-1 text-left pl-10">↳ Producidas</td>
+                    <td class="p-1">${fmt(e.t26_prod)}</td>
+                    <td class="p-1">-</td>
+                </tr>
+                <tr class="sub-26-${i} text-amber-600 bg-amber-50/10 border-b border-gray-200">
+                    <td class="p-1 text-left pl-10">↳ Proyectadas</td>
+                    <td class="p-1 font-bold">${fmt(e.t26_proj)}</td>
+                    <td class="p-1">-</td>
+                </tr>
+                <tr class="bg-gray-50/50 border-b border-gray-300">
+                    <td class="p-1 text-left pl-6 flex items-center gap-1 text-amber-600"><span class="text-[7px] font-normal border px-1 bg-white text-gray-400 shadow-sm">+</span> 2027</td>
+                    <td class="p-1 font-bold text-amber-600">${fmt(e.t27)}</td>
+                    <td class="p-1">-</td>
+                </tr>`;
+            });
+            
+            const tgPct25_26 = calcVar(totalYear25, totalYear26);
+            sumHtml += `<tr class="font-black text-gray-900 bg-gray-100">
+                <td class="p-2 text-center">Total</td>
+                <td class="p-2">${fmt(totalYear26)}</td>
+                <td class="p-2">${fmtPct(tgPct25_26)}</td>
+            </tr></tbody></table>`;
+            
+            document.getElementById('ton-summary-table').innerHTML = sumHtml;
+
+            const ctxRank = document.getElementById('chart-ton-ranking').getContext('2d');
+            if (charts['chart-ton-ranking']) charts['chart-ton-ranking'].destroy();
+
+            charts['chart-ton-ranking'] = new Chart(ctxRank, {
+                type: 'bar',
+                data: {
+                    labels: entities.map(e => e.name),
+                    datasets: [
+                        {
+                            label: 'Producidas',
+                            data: entities.map(e => Number(e.t26_prod.toFixed(0))),
+                            backgroundColor: '#004d40',
+                            barPercentage: 0.7,
+                            datalabels: {
+                                display: ctx => ctx.dataset.data[ctx.dataIndex] > 0,
+                                anchor: ctx => entities[ctx.dataIndex].t26_proj > 0 ? 'center' : 'end',
+                                align: ctx => entities[ctx.dataIndex].t26_proj > 0 ? 'center' : 'left',
+                                color: '#ffffff',
+                                font: { size: 10, weight: 'bold' },
+                                formatter: v => v.toLocaleString('es-CO')
+                            }
+                        },
+                        {
+                            label: 'Proyectadas',
+                            data: entities.map(e => Number(e.t26_proj.toFixed(0))),
+                            backgroundColor: '#f59e0b',
+                            borderRadius: 2,
+                            barPercentage: 0.7,
+                            datalabels: {
+                                display: ctx => ctx.dataset.data[ctx.dataIndex] > 0,
+                                anchor: 'end',
+                                align: 'right',
+                                color: '#d97706',
+                                font: { size: 10, weight: 'bold' },
+                                formatter: v => v.toLocaleString('es-CO')
+                            }
+                        }
+                    ]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + ctx.raw.toLocaleString('es-CO') + ' Ton' } },
+                        datalabels: {}
+                    },
+                    scales: {
+                        x: { stacked: true, display: false, grid: {display: false}, max: Math.max(...entities.map(e => e.t26)) * 1.20 },
+                        y: { stacked: true, grid: {display: false}, ticks: {color: '#334155', font: {size: 11, weight: '600'}} }
+                    }
+                }
+            });
+
+            let detHtml = `<table class="w-full text-[10px] text-right border-collapse min-w-[800px]">
+                <thead>
+                    <tr class="text-white uppercase tracking-wider">
+                        <th class="p-2 border border-white text-left font-black w-48 bg-[#548235]">${state.business === 'CONSOLIDADO' ? 'NEGOCIO' : 'MARCA'}</th>
+                        <th class="p-2 border border-white text-left font-bold w-24 bg-[#70ad47]">Valores</th>`;
+            
+            months.forEach(m => { detHtml += `<th class="p-2 border border-white font-bold bg-[#70ad47]">${m}</th>`; });
+            detHtml += `<th class="p-2 border border-white font-black bg-[#548235]">Total General</th></tr></thead><tbody>`;
+
+            if (entities.length === 0) {
+                detHtml += `<tr><td colspan="14" class="p-8 text-center text-gray-400 font-bold uppercase tracking-widest">No hay datos registrados para mostrar.</td></tr>`;
+            } else {
+                entities.forEach(e => {
+                    let row25 = '', row26 = '', row27 = '', var25_26 = '';
+                    months.forEach((m, idx) => {
+                        const isProj25 = isProjection(2025, idx);
+                        const isProj26 = isProjection(2026, idx);
+                        const isProj27 = isProjection(2027, idx);
+
+                        const bgClassRow25 = isProj25 ? 'bg-amber-50/50' : '';
+                        const textClassRow25 = isProj25 ? 'text-amber-700 font-bold' : 'text-gray-700';
+                        const bgClassRow26 = isProj26 ? 'bg-amber-50/50' : 'bg-blue-50/20';
+                        const textClassRow26 = isProj26 ? 'text-amber-700' : 'text-[#1e3a8a]';
+                        const bgClassRow27 = isProj27 ? 'bg-amber-50/50' : 'bg-green-50/20';
+                        const textClassRow27 = isProj27 ? 'text-amber-700' : 'text-[#1e3a8a]';
+
+                        const t25 = e.monthly[m].t25 || 0;
+                        const t26 = e.monthly[m].t26 || 0;
+                        const t27 = e.monthly[m].t27 || 0;
+                        const bgVar25_26 = isProj26 ? 'bg-amber-50/50' : 'bg-[#e2efda]';
+                        const vp25_26 = calcVar(t25, t26);
+                        
+                        row25 += `<td class="p-1.5 border border-gray-200 ${bgClassRow25} ${textClassRow25}">${fmt(t25)}</td>`;
+                        row26 += `<td class="p-1.5 border border-gray-200 font-bold ${textClassRow26} ${bgClassRow26}">${fmt(t26)}</td>`;
+                        row27 += `<td class="p-1.5 border border-gray-200 font-bold ${textClassRow27} ${bgClassRow27}">${fmt(t27)}</td>`;
+                        var25_26 += `<td class="p-1.5 border border-gray-200 italic ${bgVar25_26} text-gray-800 font-medium">${fmtPct(vp25_26)}</td>`;
+                    });
+                    
+                    const tgPctE25_26 = calcVar(e.t25, e.t26);
+                    row25 += `<td class="p-1.5 border border-gray-300 font-bold bg-gray-100 text-gray-800">${fmt(e.t25)}</td>`;
+                    row26 += `<td class="p-1.5 border border-gray-300 font-black text-[#1e3a8a] bg-blue-100/50">${fmt(e.t26)}</td>`;
+                    row27 += `<td class="p-1.5 border border-gray-300 font-black text-[#1e3a8a] bg-green-100/50">${fmt(e.t27)}</td>`;
+                    var25_26 += `<td class="p-1.5 border border-gray-300 bg-[#c6e0b4] font-bold italic text-gray-900">${fmtPct(tgPctE25_26)}</td>`;
+
+                    detHtml += `
+                        <tr class="hover:bg-gray-50 transition-colors group">
+                            <td rowspan="4" class="p-2 border border-gray-300 text-left font-black text-gray-700 align-top bg-gray-50/50 group-hover:bg-white">${e.name}</td>
+                            <td class="p-1.5 border border-gray-200 text-left font-semibold text-gray-600">2025</td>${row25}
+                        </tr>
+                        <tr class="hover:bg-blue-50/30 transition-colors"><td class="p-1.5 border border-gray-200 text-left font-bold text-[#1e3a8a] bg-blue-50/20">2026</td>${row26}</tr>
+                        <tr class="hover:bg-green-50/30 transition-colors"><td class="p-1.5 border border-gray-200 text-left font-bold text-[#1e3a8a] bg-green-50/20">2027</td>${row27}</tr>
+                        <tr class="hover:bg-[#d8ebd0] transition-colors"><td class="p-1.5 border border-gray-200 text-left italic bg-[#e2efda] font-bold text-gray-700">VAR 2025 - 2026</td>${var25_26}</tr>
+                    `;
+                });
+                
+                let gtRow25 = '', gtRow26 = '', gtRow27 = '', gtVar25_26 = '';
+                months.forEach((m, idx) => {
+                    const isProj25 = isProjection(2025, idx);
+                    const isProj26 = isProjection(2026, idx);
+                    const isProj27 = isProjection(2027, idx);
+
+                    const bgClassRow25 = isProj25 ? 'bg-amber-100/60' : 'bg-gray-100';
+                    const textClassRow25 = isProj25 ? 'text-amber-700 font-black' : 'text-gray-800';
+                    const bgClassRow26 = isProj26 ? 'bg-amber-100/60' : 'bg-blue-100';
+                    const textClassRow26 = isProj26 ? 'text-amber-700 font-black' : 'text-[#1e3a8a] font-black';
+                    const bgClassRow27 = isProj27 ? 'bg-amber-100/60' : 'bg-green-100';
+                    const textClassRow27 = isProj27 ? 'text-amber-700 font-black' : 'text-[#1e3a8a] font-black';
+
+                    const t25 = grandT25[idx] || 0;
+                    const t26 = grandT26[idx] || 0;
+                    const t27 = grandT27[idx] || 0;
+                    const vp25_26 = calcVar(t25, t26);
+                    
+                    gtRow25 += `<td class="p-2 border border-gray-300 font-bold ${bgClassRow25} ${textClassRow25}">${fmt(t25)}</td>`;
+                    gtRow26 += `<td class="p-2 border border-gray-300 font-black ${bgClassRow26} ${textClassRow26}">${fmt(t26)}</td>`;
+                    gtRow27 += `<td class="p-2 border border-gray-300 font-black ${bgClassRow27} ${textClassRow27}">${fmt(t27)}</td>`;
+                    gtVar25_26 += `<td class="p-2 border border-gray-300 bg-[#c6e0b4] font-black italic text-gray-900">${fmtPct(vp25_26)}</td>`;
+                });
+                
+                const gVp25_26 = calcVar(totalYear25, totalYear26);
+                gtRow25 += `<td class="p-2 border border-gray-400 font-black bg-gray-300 text-gray-900">${fmt(totalYear25)}</td>`;
+                gtRow26 += `<td class="p-2 border border-gray-400 font-black bg-blue-200 text-[#1e3a8a]">${fmt(totalYear26)}</td>`;
+                gtRow27 += `<td class="p-2 border border-gray-400 font-black bg-green-200 text-[#1e3a8a]">${fmt(totalYear27)}</td>`;
+                gtVar25_26 += `<td class="p-2 border border-gray-400 bg-[#a9d08e] font-black italic text-gray-900">${fmtPct(gVp25_26)}</td>`;
+
+                detHtml += `
+                    <tr class="border-t-2 border-gray-500"><td colspan="2" class="p-2 border border-gray-300 text-left font-black bg-gray-200 text-gray-800 uppercase tracking-wide">Total 2025</td>${gtRow25}</tr>
+                    <tr><td colspan="2" class="p-2 border border-gray-300 text-left font-black bg-[#1e3a8a] text-white uppercase tracking-wide">Total 2026</td>${gtRow26}</tr>
+                    <tr><td colspan="2" class="p-2 border border-gray-300 text-left font-black bg-[#4ade80] text-gray-900 uppercase tracking-wide">Total 2027</td>${gtRow27}</tr>
+                    <tr><td colspan="2" class="p-2 border border-gray-300 text-left font-black italic bg-[#a9d08e] text-gray-900 uppercase tracking-wide">Total VAR 2025 - 2026</td>${gtVar25_26}</tr>
+                </tbody></table>`;
+            }
+
+            document.getElementById('ton-detail-table').innerHTML = detHtml;
+        }
+
+        function getI(keyword) {
+            const filtered = allData.filter(d => d.negocio.toUpperCase() === state.business.toUpperCase());
+            if (state.business.toUpperCase() === 'NOEL') {
+                if (keyword.toLowerCase() === 'servicio') {
+                    return filtered.find(d => d.indicador.toLowerCase().includes('servicio noel')) || filtered.find(d => d.indicador.toLowerCase().includes('servicio'));
+                }
+                if (keyword.toLowerCase().includes('pronóstico') || keyword.toLowerCase().includes('pronostico')) {
+                    return filtered.find(d => d.indicador.toLowerCase().includes('pronóstico consolidado noel')) || filtered.find(d => d.indicador.toLowerCase().includes('pronóstico'));
+                }
+            } else if (state.business.toUpperCase() === 'ABIMAR') {
+                if (keyword.toLowerCase() === 'servicio') {
+                    return filtered.find(d => d.indicador.toLowerCase().includes('servicio nacional')) || filtered.find(d => d.indicador.toLowerCase().includes('servicio'));
+                }
+                if (keyword.toLowerCase().includes('pronóstico') || keyword.toLowerCase().includes('pronostico')) {
+                    return filtered.find(d => d.indicador.toLowerCase().includes('pronóstico consolidado abimar')) || filtered.find(d => d.indicador.toLowerCase().includes('pronóstico'));
+                }
+            } else if (state.business.toUpperCase() === 'POZUELO') {
+                if (keyword.toLowerCase() === 'servicio') {
+                    const exact = filtered.find(d => d.indicador.trim().toLowerCase() === 'nivel de servicio');
+                    if (exact) return exact;
+                }
+                if (keyword.toLowerCase() === 'agotados') {
+                    const exact = filtered.find(d => d.indicador.trim().toLowerCase() === '% de agotados' || d.indicador.trim().toLowerCase() === 'agotados');
+                    if (exact) return exact;
+                }
+            } else if (state.business.toUpperCase() === 'YUPI COLOMBIA') {
+                if (keyword.toLowerCase().includes('pronóstico') || keyword.toLowerCase().includes('pronostico')) {
+                    return filtered.find(d => d.indicador.toLowerCase().includes('pronóstico consolidado yupi')) || filtered.find(d => d.indicador.toLowerCase().includes('pronóstico'));
+                }
+            } else if (state.business.toUpperCase().includes('TRESMONTES')) {
+                if (keyword.toLowerCase() === 'servicio') {
+                    const exact = filtered.find(d => d.indicador.trim().toLowerCase() === 'nivel de servicio' || d.indicador.toLowerCase().includes('consolidado'));
+                    if (exact) return exact;
+                }
+                if (keyword.toLowerCase().includes('pronóstico') || keyword.toLowerCase().includes('pronostico')) {
+                    const exact = filtered.find(d => d.indicador.toLowerCase().includes('consolidado') || d.indicador.toLowerCase() === 'error de pronóstico' || d.indicador.toLowerCase() === '% error del pronóstico');
+                    if (exact) return exact;
+                }
+            }
+
+            if (keyword.toLowerCase().includes('total')) {
+                return filtered.find(d => d.indicador.toLowerCase().includes('total') || d.indicador.toLowerCase().includes('(pt+me+mp)'));
+            }
+
+            const matches = filtered.filter(d => d.indicador.toLowerCase().includes(keyword.toLowerCase()));
+            if (matches.length > 1 && state.business.toUpperCase() !== 'CONSOLIDADO') {
+                const nac = matches.find(d => d.indicador.toLowerCase().includes('nacional'));
+                if (nac) return nac;
+            }
+            return matches[0];
+        }
+
+        function isEnConstruccion(item) {
+            if (!item) return true;
+            const val = state.period === 'ACUM AÑO 2026' ? item.acum : item.mensual[state.period];
+            return (!val || val === 0) && (item.meta === 0 || !item.meta);
+        }
+
+        function getConsolidatedCardBreakdownHTML(keyword, period) {
+            let items = allData.filter(d => d.negocio.toUpperCase() !== 'CONSOLIDADO');
+            if (['PT', 'ME', 'MP'].includes(keyword.toUpperCase())) {
+                items = items.filter(d => !d.indicador.toLowerCase().includes('total') && d.indicador.toUpperCase().includes(keyword.toUpperCase()));
+            } else if (keyword.toLowerCase().includes('total')) {
+                items = items.filter(d => d.indicador.toLowerCase().includes('total') || d.indicador.toLowerCase().includes('(pt+me+mp)'));
+            } else {
+                items = items.filter(d => d.indicador.toLowerCase().includes(keyword.toLowerCase()));
+            }
+
+            const busMap = {};
+            items.forEach(it => {
+                const bkey = it.negocio.trim().toUpperCase();
+                const indName = it.indicador.toLowerCase();
+                if (!busMap[bkey]) {
+                    busMap[bkey] = it;
+                } else {
+                    const currInd = busMap[bkey].indicador.toLowerCase();
+                    if (indName.includes('nacional') && !currInd.includes('nacional')) busMap[bkey] = it;
+                }
+            });
+
+            const uniqueItems = Object.values(busMap);
+            uniqueItems.sort((a, b) => {
+                const normA = a.negocio.trim().toUpperCase();
+                const normB = b.negocio.trim().toUpperCase();
+                let idxA = DESIRED_BUSINESS_ORDER.findIndex(o => normA.includes(o) || o.includes(normA));
+                let idxB = DESIRED_BUSINESS_ORDER.findIndex(o => normB.includes(o) || o.includes(normB));
+                if (idxA === -1) idxA = 99;
+                if (idxB === -1) idxB = 99;
+                return idxA - idxB;
+            });
+
+            const isP = !['PT', 'ME', 'MP', 'INVENTARIO'].some(k => keyword.toUpperCase().includes(k));
+
+            return uniqueItems.map(it => {
+                const val = (period === 'ACUM AÑO 2026' || period === 'ACUM') ? it.acum : it.mensual[period];
+                const enConst = (!val || val === 0) && (it.meta === 0 || !it.meta);
+                let valFormatted = enConst ? 'En const.' : (isP ? (Number(val)*100).toFixed(2) + '%' : Number(val).toFixed(1) + ' d');
+                let metaFormatted = (it.meta === 0 || !it.meta) ? 'N/D' : (isP ? (Number(it.meta)*100).toFixed(2) + '%' : Number(it.meta).toFixed(1) + ' d');
+
+                return `
+                    <div class="flex justify-between items-center text-[10px] py-0.5 border-b border-slate-800 last:border-0 gap-2">
+                        <span class="font-bold text-slate-300 truncate">${it.negocio}</span>
+                        <span class="${enConst ? 'text-slate-500 font-medium' : 'text-white font-black'} whitespace-nowrap">
+                            ${valFormatted} <span class="text-blue-300 font-normal">| ${metaFormatted}</span>
+                        </span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getConsolidatedBreakdown(keyword, month, isP) {
+            let items = allData.filter(d => d.negocio.toUpperCase() !== 'CONSOLIDADO');
+            if (['PT', 'ME', 'MP'].includes(keyword.toUpperCase())) {
+                items = items.filter(d => !d.indicador.toLowerCase().includes('total') && d.indicador.toUpperCase().includes(keyword.toUpperCase()));
+            } else if (keyword.toLowerCase().includes('total')) {
+                items = items.filter(d => d.indicador.toLowerCase().includes('total') || d.indicador.toLowerCase().includes('(pt+me+mp)'));
+            } else {
+                items = items.filter(d => d.indicador.toLowerCase().includes(keyword.toLowerCase()));
+            }
+
+            const busMap = {};
+            items.forEach(it => {
+                const bkey = it.negocio.trim().toUpperCase();
+                const indName = it.indicador.toLowerCase();
+                if (!busMap[bkey]) busMap[bkey] = it;
+                else if (indName.includes('nacional') && !busMap[bkey].indicador.toLowerCase().includes('nacional')) busMap[bkey] = it;
+            });
+
+            const uniqueItems = Object.values(busMap);
+            uniqueItems.sort((a, b) => {
+                const normA = a.negocio.trim().toUpperCase();
+                const normB = b.negocio.trim().toUpperCase();
+                let idxA = DESIRED_BUSINESS_ORDER.findIndex(o => normA.includes(o) || o.includes(normA));
+                let idxB = DESIRED_BUSINESS_ORDER.findIndex(o => normB.includes(o) || o.includes(normB));
+                if (idxA === -1) idxA = 99;
+                if (idxB === -1) idxB = 99;
+                return idxA - idxB;
+            });
+
+            return uniqueItems.map(it => {
+                const val = month === 'ACUM' ? it.acum : it.mensual[month];
+                const enConst = (!val || val === 0) && (it.meta === 0 || !it.meta);
+                let formatted = enConst ? 'En construcción' : (isP ? (Number(val)*100).toFixed(2) + '%' : Number(val).toFixed(1) + ' d');
+                return { negocio: it.negocio, val: formatted, enConst };
+            });
+        }
+
+        function getConsolidatedMetaBreakdown(keyword, isP) {
+            let items = allData.filter(d => d.negocio.toUpperCase() !== 'CONSOLIDADO');
+            if (['PT', 'ME', 'MP'].includes(keyword.toUpperCase())) {
+                items = items.filter(d => !d.indicador.toLowerCase().includes('total') && d.indicador.toUpperCase().includes(keyword.toUpperCase()));
+            } else if (keyword.toLowerCase().includes('total')) {
+                items = items.filter(d => d.indicador.toLowerCase().includes('total') || d.indicador.toLowerCase().includes('(pt+me+mp)'));
+            } else {
+                items = items.filter(d => d.indicador.toLowerCase().includes(keyword.toLowerCase()));
+            }
+
+            const busMap = {};
+            items.forEach(it => {
+                const bkey = it.negocio.trim().toUpperCase();
+                const indName = it.indicador.toLowerCase();
+                if (!busMap[bkey]) busMap[bkey] = it;
+                else if (indName.includes('nacional') && !busMap[bkey].indicador.toLowerCase().includes('nacional')) busMap[bkey] = it;
+            });
+
+            const uniqueItems = Object.values(busMap);
+            uniqueItems.sort((a, b) => {
+                const normA = a.negocio.trim().toUpperCase();
+                const normB = b.negocio.trim().toUpperCase();
+                let idxA = DESIRED_BUSINESS_ORDER.findIndex(o => normA.includes(o) || o.includes(normA));
+                let idxB = DESIRED_BUSINESS_ORDER.findIndex(o => normB.includes(o) || o.includes(normB));
+                if (idxA === -1) idxA = 99;
+                if (idxB === -1) idxB = 99;
+                return idxA - idxB;
+            });
+
+            return uniqueItems.map(it => {
+                const noMeta = (it.meta === 0 || !it.meta);
+                let metaFormatted = noMeta ? 'N/D' : (isP ? (Number(it.meta)*100).toFixed(2) + '%' : Number(it.meta).toFixed(1) + ' d');
+                return { negocio: it.negocio, metaFormatted };
+            });
+        }
+
+        function update() {
+            let labelServicio = 'Nivel de Servicio';
+            let labelAgotados = '% de Agotados';
+            let labelPronostico = 'Pronóstico (% Error)';
+
+            if (state.business.toUpperCase() === 'NOEL') {
+                labelServicio = 'Nivel de Servicio (NS Nacional e Internacional)';
+                labelAgotados = '% de Agotados (Comercial Nutresa)';
+                labelPronostico = 'Pronóstico (% Error) (MAPE Nacional e Internacional)';
+            } else if (state.business.toUpperCase() === 'ABIMAR') {
+                labelServicio = 'Nivel de Servicio (NS Nacional)';
+                labelPronostico = 'Pronóstico (% Error) (MAPE Nacional e Internacional)';
+            } else if (state.business.toUpperCase() === 'POZUELO') {
+                labelServicio = 'Nivel de Servicio (CAM)';
+                labelPronostico = 'Pronóstico (% Error) (MAPE CAM)';
+            } else if (state.business.toUpperCase() === 'ALIMENTOS DORIA' || state.business.toUpperCase() === 'DORIA') {
+                labelServicio = 'Nivel de Servicio (NS Nacional)';
+                labelAgotados = '% de Agotados (Comercial Nutresa)';
+                labelPronostico = 'Pronóstico (% Error) (MAPE Nacional)';
+            } else if (state.business.toUpperCase() === 'YUPI COLOMBIA') {
+                labelServicio = 'Nivel de Servicio (Comercial Nutresa)';
+                labelAgotados = '% de Agotados (Comercial Nutresa)';
+                labelPronostico = 'Pronóstico (% Error) (MAPE Nacional e Internacional)';
+            } else if (state.business.toUpperCase() === 'YUPI ECUADOR') {
+                labelServicio = 'Nivel de Servicio (Cordialsa Ecuador)';
+                labelAgotados = '% de Agotados (Cordialsa Ecuador)';
+            }
+
+            document.getElementById('header-servicio').innerText = labelServicio;
+            document.getElementById('header-agotados').innerText = labelAgotados;
+            document.getElementById('header-pronostico').innerText = labelPronostico;
+
+            const summaryKeys = [
+                { k: 'Servicio', label: labelServicio },
+                { k: 'Agotados', label: labelAgotados },
+                { k: 'Pronóstico', label: labelPronostico },
+                { k: 'Inventario Total', label: 'Días Inventario' }
+            ];
+
+            const summaryContainer = document.getElementById('summary-block');
+            summaryContainer.innerHTML = '';
+            summaryKeys.forEach(s => {
+                const item = getI(s.k);
+                if (item) {
+                    const val = state.period === 'ACUM AÑO 2026' ? item.acum : item.mensual[state.period];
+                    const isP = s.k !== 'Inventario Total';
+                    const enConst = isEnConstruccion(item);
+                    const displayVal = enConst ? 'En construcción' : (isP ? (Number(val)*100).toFixed(2)+'%' : Number(val).toFixed(1));
+                    const textClass = enConst ? 'text-xs text-gray-400 font-bold' : 'text-lg lg:text-2xl font-black text-gray-800';
+                    
+                    summaryContainer.innerHTML += `
+                        <div class="kpi-card border-t-4 border-blue-900 p-3 lg:p-5 relative group cursor-pointer">
+                            ${state.business.toUpperCase() === 'CONSOLIDADO' ? `<span class="absolute top-2 right-2 text-[8px] bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded-full font-bold opacity-75 group-hover:opacity-100 transition-opacity">Ver desglose 🔍</span>` : ''}
+                            <p class="text-[9px] lg:text-[10px] font-bold text-gray-400 uppercase tracking-tighter mb-1 truncate" title="${s.label}">${s.label}</p>
+                            <p class="${textClass}">${displayVal}</p>
+                            
+                            ${state.business.toUpperCase() === 'CONSOLIDADO' ? `
+                            <div class="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-64 bg-slate-900/95 backdrop-blur-md text-white rounded-xl p-3 shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-50 border border-slate-700">
+                                <div class="flex justify-between items-center text-[10px] font-black text-blue-400 uppercase tracking-wider mb-2 pb-1 border-b border-slate-700">
+                                    <span>${s.label}</span>
+                                    <span>Real | Meta</span>
+                                </div>
+                                <div class="space-y-0.5">
+                                    ${getConsolidatedCardBreakdownHTML(s.k, state.period)}
+                                </div>
+                            </div>
+                            ` : ''}
+                        </div>`;
+                }
+            });
+
+            renderSection('Servicio', 'service-cards', 'chart-service', 'direct');
+            renderSection('Agotados', 'agotados-cards', 'chart-agotados', 'inverse_agotado');
+            renderSection('Pronóstico', 'pronostico-cards', 'chart-pronostico', 'inverse');
+            renderInventarios();
+        }
+
+        function renderSection(keyword, cardsId, chartId, type) {
+            const item = getI(keyword);
+            const container = document.getElementById(cardsId);
+            container.innerHTML = '';
+            
+            if (item) {
+                const val = state.period === 'ACUM AÑO 2026' ? item.acum : item.mensual[state.period];
+                const meta = item.meta;
+                const enConst = isEnConstruccion(item);
+                const isP = keyword !== 'Inventario';
+
+                let tooltipBadge = '';
+                let tooltipPopup = '';
+
+                let isNoelDesglose = (keyword === 'Servicio' || keyword === 'Pronóstico') && state.business.toUpperCase() === 'NOEL';
+                let isAbimarDesglose = keyword === 'Pronóstico' && state.business.toUpperCase() === 'ABIMAR';
+                let isPozueloDesglose = (keyword === 'Servicio' || keyword === 'Pronóstico') && state.business.toUpperCase() === 'POZUELO';
+                let isPozueloAgotados = keyword === 'Agotados' && state.business.toUpperCase() === 'POZUELO';
+                let isYupiDesglose = keyword === 'Pronóstico' && state.business.toUpperCase() === 'YUPI COLOMBIA';
+                let isTmlucDesglose = (keyword === 'Servicio' || keyword === 'Pronóstico') && state.business.toUpperCase().includes('TRESMONTES');
+
+                if (isNoelDesglose) {
+                    const filtered = allData.filter(d => d.negocio.toUpperCase() === 'NOEL' && d.indicador.toLowerCase().includes(keyword.toLowerCase()));
+                    const nac = filtered.find(d => d.indicador.toLowerCase().includes('nacional') && !d.indicador.toLowerCase().includes('consolidado'));
+                    const int = filtered.find(d => d.indicador.toLowerCase().includes('internacional'));
+                    if (nac && int) {
+                        const vNac = state.period === 'ACUM AÑO 2026' ? nac.acum : nac.mensual[state.period];
+                        const vInt = state.period === 'ACUM AÑO 2026' ? int.acum : int.mensual[state.period];
+                        tooltipBadge = `<span class="absolute top-2 right-2 text-[8px] bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded-full font-bold opacity-75 group-hover:opacity-100 transition-opacity">Ver detalle 🔍</span>`;
+                        tooltipPopup = `
+                        <div class="absolute left-0 lg:left-1/2 lg:-translate-x-1/2 top-full mt-2 w-56 bg-slate-900/95 backdrop-blur-md text-white rounded-xl p-3 shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-50 border border-slate-700">
+                            <div class="text-[10px] font-black text-blue-400 uppercase tracking-wider mb-2 pb-1 border-b border-slate-700">Desglose Detalle</div>
+                            <div class="space-y-1 text-[10px]">
+                                <div class="flex justify-between items-center"><span class="font-bold text-slate-300">Nacional:</span> <span class="font-black text-white">${(Number(vNac)*100).toFixed(2)}%</span></div>
+                                <div class="flex justify-between items-center"><span class="font-bold text-slate-300">Internacional:</span> <span class="font-black text-white">${(Number(vInt)*100).toFixed(2)}%</span></div>
+                            </div>
+                        </div>`;
+                    }
+                } else if (isAbimarDesglose || isYupiDesglose) {
+                    const biz = isAbimarDesglose ? 'ABIMAR' : 'YUPI COLOMBIA';
+                    const filtered = allData.filter(d => d.negocio.toUpperCase() === biz && d.indicador.toLowerCase().includes('pronóstico'));
+                    const nac = filtered.find(d => d.indicador.toLowerCase().includes('nacional') && !d.indicador.toLowerCase().includes('consolidado'));
+                    const int = filtered.find(d => d.indicador.toLowerCase().includes('internacional'));
+                    if (nac && int) {
+                        const vNac = state.period === 'ACUM AÑO 2026' ? nac.acum : nac.mensual[state.period];
+                        const vInt = state.period === 'ACUM AÑO 2026' ? int.acum : int.mensual[state.period];
+                        tooltipBadge = `<span class="absolute top-2 right-2 text-[8px] bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded-full font-bold opacity-75 group-hover:opacity-100 transition-opacity">Ver detalle 🔍</span>`;
+                        tooltipPopup = `
+                        <div class="absolute left-0 lg:left-1/2 lg:-translate-x-1/2 top-full mt-2 w-56 bg-slate-900/95 backdrop-blur-md text-white rounded-xl p-3 shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-50 border border-slate-700">
+                            <div class="text-[10px] font-black text-blue-400 uppercase tracking-wider mb-2 pb-1 border-b border-slate-700">Desglose Detalle</div>
+                            <div class="space-y-1 text-[10px]">
+                                <div class="flex justify-between items-center"><span class="font-bold text-slate-300">Nacional:</span> <span class="font-black text-white">${(Number(vNac)*100).toFixed(2)}%</span></div>
+                                <div class="flex justify-between items-center"><span class="font-bold text-slate-300">Internacional:</span> <span class="font-black text-white">${(Number(vInt)*100).toFixed(2)}%</span></div>
+                            </div>
+                        </div>`;
+                    }
+                }
+
+                if (enConst) {
+                    container.innerHTML = `
+                        <div class="kpi-card flex justify-between items-center border-l-8 border-gray-300 p-3 lg:p-5 relative group cursor-pointer">
+                            ${state.business.toUpperCase() === 'CONSOLIDADO' ? `<span class="absolute top-2 right-2 text-[8px] bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded-full font-bold opacity-75 group-hover:opacity-100 transition-opacity">Ver desglose 🔍</span>` : tooltipBadge}
+                            <div><p class="text-[9px] lg:text-[10px] font-bold text-gray-400 uppercase">Dato Real</p><p class="text-xs lg:text-base font-bold text-gray-400">En construcción</p></div>
+                            <div class="text-right"><p class="text-[9px] lg:text-[10px] font-bold text-gray-400 uppercase">Meta</p><p class="text-xs font-bold text-gray-400">N/D</p></div>
+                            ${state.business.toUpperCase() === 'CONSOLIDADO' ? `<div class="absolute left-0 lg:left-1/2 lg:-translate-x-1/2 top-full mt-2 w-64 bg-slate-900/95 backdrop-blur-md text-white rounded-xl p-3 shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-50 border border-slate-700"><div class="flex justify-between items-center text-[10px] font-black text-blue-400 uppercase tracking-wider mb-2 pb-1 border-b border-slate-700"><span>Desglose</span><span>Real | Meta</span></div><div class="space-y-0.5">${getConsolidatedCardBreakdownHTML(keyword, state.period)}</div></div>` : tooltipPopup}
+                        </div>
+                        <div class="kpi-card flex justify-between items-center border-l-8 border-gray-300 p-3 lg:p-5 relative group cursor-pointer">
+                            <div><p class="text-[9px] lg:text-[10px] font-bold text-gray-400 uppercase">Cumplimiento</p><p class="text-xs lg:text-base font-bold text-gray-400">En construcción</p></div>
+                            <div class="w-6 h-6 lg:w-8 lg:h-8 rounded-full bg-gray-300 shadow-sm"></div>
+                        </div>
+                    `;
+                } else {
+                    let comp = 0;
+                    let color = (meta === 0 || !meta) ? 'bg-gray-400' : 'bg-red-500';
+
+                    if (meta > 0) {
+                        if (type === 'direct') {
+                            comp = Math.max(0, Math.min(2, val / meta));
+                            if (comp >= 0.95) color = 'bg-green-500';
+                            else if (comp >= 0.90) color = 'bg-yellow-500';
+                            else color = 'bg-red-500';
+                        } else {
+                            comp = Math.max(0, Math.min(2, 2 - (val / meta)));
+                            if (comp >= 1.0) color = 'bg-green-500'; 
+                            else color = 'bg-red-500';
+                        }
+                    }
+
+                    const fmt = v => isP ? (Number(v)*100).toFixed(2)+'%' : Number(v).toFixed(1);
+
+                    container.innerHTML = `
+                        <div class="kpi-card flex justify-between items-center border-l-8 border-blue-900 p-3 lg:p-5 relative group cursor-pointer">
+                            ${state.business.toUpperCase() === 'CONSOLIDADO' ? `<span class="absolute top-2 right-2 text-[8px] bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded-full font-bold opacity-75 group-hover:opacity-100 transition-opacity">Ver desglose 🔍</span>` : tooltipBadge}
+                            <div><p class="text-[9px] lg:text-[10px] font-bold text-gray-400 uppercase">Dato Real</p><p class="text-base lg:text-xl font-black">${fmt(val)}</p></div>
+                            <div class="text-right"><p class="text-[9px] lg:text-[10px] font-bold text-gray-400 uppercase">Meta</p><p class="text-xs lg:text-sm font-bold text-blue-900">${meta > 0 ? fmt(meta) : 'N/D'}</p></div>
+                            ${state.business.toUpperCase() === 'CONSOLIDADO' ? `<div class="absolute left-0 lg:left-1/2 lg:-translate-x-1/2 top-full mt-2 w-64 bg-slate-900/95 backdrop-blur-md text-white rounded-xl p-3 shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-50 border border-slate-700"><div class="flex justify-between items-center text-[10px] font-black text-blue-400 uppercase tracking-wider mb-2 pb-1 border-b border-slate-700"><span>Desglose</span><span>Real | Meta</span></div><div class="space-y-0.5">${getConsolidatedCardBreakdownHTML(keyword, state.period)}</div></div>` : tooltipPopup}
+                        </div>
+                        <div class="kpi-card flex justify-between items-center border-l-8 ${color.replace('bg','border')} p-3 lg:p-5 relative group cursor-pointer">
+                            <div><p class="text-[9px] lg:text-[10px] font-bold text-gray-400 uppercase">Cumplimiento</p><p class="text-base lg:text-xl font-black">${meta > 0 ? (Number(comp)*100).toFixed(1) + '%' : 'N/D'}</p></div>
+                            <div class="w-6 h-6 lg:w-8 lg:h-8 rounded-full ${color} shadow-sm"></div>
+                        </div>
+                    `;
+                }
+                renderTrendChart(chartId, item, isP, keyword);
+            }
+        }
+
+        function renderTrendChart(id, item, isP, keyword) {
+            const ctx = document.getElementById(id).getContext('2d');
+            if (charts[id]) charts[id].destroy();
+
+            const enConst = isEnConstruccion(item);
+            const realData = state.months.map(m => Number(Number(isP ? item.mensual[m] * 100 : item.mensual[m]).toFixed(isP ? 2 : 1)));
+            const metaData = state.months.map(() => Number(Number(isP ? item.meta * 100 : item.meta).toFixed(isP ? 2 : 1)));
+
+            charts[id] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: state.months,
+                    datasets: [
+                        { 
+                            label: 'Real', 
+                            data: realData, 
+                            borderColor: enConst ? '#cbd5e1' : '#1e3a8a', 
+                            borderWidth: window.innerWidth < 1024 ? 2.5 : 3.5, 
+                            pointRadius: window.innerWidth < 1024 ? 4 : 6,
+                            pointHitRadius: 15,
+                            tension: 0.3,
+                            datalabels: {
+                                align: 'top',
+                                anchor: 'end',
+                                offset: 8,
+                                clip: false, 
+                                color: enConst ? '#94a3b8' : '#1e3a8a',
+                                font: { weight: 'bold', size: window.innerWidth < 1024 ? 12 : 14 },
+                                formatter: v => enConst ? 'S/D' : Number(v).toFixed(isP ? 2 : 1) + (isP ? '%' : '')
+                            }
+                        },
+                        { 
+                            label: 'Meta', 
+                            data: metaData, 
+                            borderColor: '#ef4444', 
+                            borderDash: [5, 5], 
+                            borderWidth: (enConst || item.meta === 0) ? 0 : 1.5, 
+                            pointRadius: 0,
+                            pointHitRadius: 15,
+                            datalabels: { 
+                                display: ctx => !enConst && item.meta > 0 && ctx.dataIndex === ctx.dataset.data.length - 1,
+                                align: 'bottom',
+                                anchor: 'end',
+                                offset: 12,
+                                clip: false,
+                                color: '#ef4444',
+                                font: { weight: 'bold', size: window.innerWidth < 1024 ? 11 : 13 },
+                                formatter: v => 'Meta: ' + Number(v).toFixed(isP ? 2 : 1) + (isP ? '%' : '')
+                            }
+                        }
+                    ]
+                },
+                options: { 
+                    layout: { padding: { top: 40, right: 85, left: 20, bottom: 5 } },
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    plugins: { 
+                        legend: { display: false },
+                        datalabels: { display: true },
+                        tooltip: { 
+                            callbacks: { 
+                                title: items => `${items[0].label} - ${state.business}`,
+                                label: ctx => {
+                                    if (state.business.toUpperCase() === 'CONSOLIDADO') {
+                                        const isMeta = ctx.datasetIndex === 1;
+                                        if (isMeta) {
+                                            const b = getConsolidatedMetaBreakdown(item.indicador, isP);
+                                            let lines = b.map(x => `  • ${x.negocio}: Meta ${x.metaFormatted}`);
+                                            lines.push('-----------------------------');
+                                            lines.push(`  Promedio Meta: ${item.meta > 0 ? Number(ctx.parsed.y).toFixed(isP ? 2 : 1) + (isP ? '%' : '') : 'N/D'}`);
+                                            return lines;
+                                        } else {
+                                            const b = getConsolidatedBreakdown(item.indicador, ctx.label, isP);
+                                            let lines = b.map(x => `  • ${x.negocio}: ${x.val}`);
+                                            lines.push('-----------------------------');
+                                            lines.push(`  Promedio Real: ${Number(ctx.parsed.y).toFixed(isP ? 2 : 1)}${isP ? '%' : ''}`);
+                                            return lines;
+                                        }
+                                    }
+                                    return ctx.dataset.label + ': ' + Number(ctx.parsed.y).toFixed(isP ? 2 : 1) + (isP ? '%' : '');
+                                }
+                            } 
+                        }
+                    }, 
+                    scales: { 
+                        y: { 
+                            display: true, grace: '25%', 
+                            ticks: { display: true, color: '#64748b', font: { size: 10, weight: '600' }, callback: v => Number(v).toFixed(isP ? 2 : 1) + (isP ? '%' : '') }, 
+                            grid: { color: '#f1f5f9' } 
+                        }, 
+                        x: { 
+                            display: true, 
+                            ticks: { display: true, color: '#64748b', font: { size: 10, weight: '600' } }, 
+                            grid: { display: false } 
+                        } 
+                    } 
+                }
+            });
+        }
+
+        function renderInventarios() {
+            const keys = ['PT', 'ME', 'MP'];
+            const labels = ['P. Terminado (PT)', 'M. Empaque (ME)', 'M. Prima (MP)'];
+            const dataItems = keys.map(k => {
+               const filtered = allData.filter(d => d.negocio.toUpperCase() === state.business.toUpperCase() && !d.indicador.toLowerCase().includes('total'));
+               return filtered.find(d => d.indicador.toUpperCase().includes(k));
+            });
+            
+            const ctx = document.getElementById('chart-inventario').getContext('2d');
+            if(charts['chart-inventario']) charts['chart-inventario'].destroy();
+            
+            charts['chart-inventario'] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{ 
+                        label: 'Días', 
+                        data: dataItems.map(it => it ? Number(Number(state.period === 'ACUM AÑO 2026' ? it.acum : it.mensual[state.period]).toFixed(1)) : 0), 
+                        backgroundColor: '#1e3a8a', 
+                        borderRadius: 4,
+                        datalabels: {
+                            color: 'white', anchor: 'end', align: 'left', offset: 14,
+                            font: { weight: 'bold', size: window.innerWidth < 1024 ? 12 : 14 },
+                            formatter: (v, ctx) => isEnConstruccion(dataItems[ctx.dataIndex]) ? 'S/D' : Number(v).toFixed(1) + ' d'
+                        }
+                    }]
+                },
+                options: { 
+                    indexAxis: 'y', responsive: true, maintainAspectRatio: false, 
+                    plugins: { 
+                        legend: { display: false }, datalabels: { display: true },
+                        tooltip: { 
+                            callbacks: { 
+                                title: items => state.business.toUpperCase() === 'CONSOLIDADO' ? `${items[0].label} (Desglose por Negocio)` : `${items[0].label} - ${state.business}`,
+                                label: ctx => {
+                                    if (state.business.toUpperCase() === 'CONSOLIDADO') {
+                                        const b = getConsolidatedBreakdown(keys[ctx.dataIndex], state.period === 'ACUM AÑO 2026' ? 'ACUM' : state.period, false);
+                                        let lines = b.map(x => `  • ${x.negocio}: ${x.val}`);
+                                        lines.push('-----------------------------');
+                                        lines.push(`  Promedio Consolidado: ${Number(ctx.parsed.x).toFixed(1)} d`);
+                                        return lines;
+                                    }
+                                    return ctx.dataset.label + ': ' + Number(ctx.parsed.x).toFixed(1) + ' d';
+                                } 
+                            } 
+                        }
+                    },
+                    scales: { 
+                        x: { display: true, beginAtZero: true, grid: { display: false }, ticks: { color: '#64748b', font: { size: 10, weight: '600' } } }, 
+                        y: { display: true, ticks: { color: '#64748b', font: { size: 10, weight: '600' } } } 
+                    }
+                }
+            });
+
+            const container = document.getElementById('inventario-cards');
+            container.innerHTML = '';
+            dataItems.forEach((it, idx) => {
+                if(it) {
+                    const enConst = isEnConstruccion(it);
+                    if (enConst) {
+                        container.innerHTML += `
+                            <div class="kpi-card flex justify-between items-center py-2 lg:py-4 border-l-4 border-gray-300 relative group cursor-pointer">
+                                <div class="flex flex-col">
+                                    <span class="text-[10px] lg:text-xs font-bold text-gray-400 uppercase">${labels[idx]}</span>
+                                    <span class="text-[9px] lg:text-[11px] text-gray-400 font-bold">Meta: N/D</span>
+                                </div>
+                                <span class="font-bold text-xs lg:text-base text-gray-400">En construcción</span>
+                                <div class="w-2 h-2 lg:w-4 lg:h-4 rounded-full bg-gray-300 shadow-sm"></div>
+                            </div>`;
+                    } else {
+                        const val = state.period === 'ACUM AÑO 2026' ? it.acum : it.mensual[state.period];
+                        const color = (it.meta > 0 && Number(val) <= Number(it.meta)) ? 'bg-green-500' : (it.meta === 0 ? 'bg-gray-400' : 'bg-red-500');
+                        container.innerHTML += `
+                            <div class="kpi-card flex justify-between items-center py-2 lg:py-4 border-l-4 ${color.replace('bg','border')} relative group cursor-pointer">
+                                <div class="flex flex-col">
+                                    <span class="text-[10px] lg:text-xs font-bold text-gray-500 uppercase">${labels[idx]}</span>
+                                    <span class="text-[9px] lg:text-[11px] text-blue-900 font-black">Meta: ${it.meta > 0 ? Number(it.meta).toFixed(1) + ' d' : 'N/D'}</span>
+                                </div>
+                                <span class="font-black text-sm lg:text-2xl text-gray-800">${Number(val).toFixed(1)} d</span>
+                                <div class="w-2 h-2 lg:w-4 lg:h-4 rounded-full ${color} shadow-sm"></div>
+                            </div>`;
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
