@@ -187,7 +187,6 @@
         let charts = {};
         let mesCierreActual = new Date().getMonth() - 1;
 
-        // Limpieza de caracteres y acentos
         function cleanText(str) {
             return String(str || '')
                 .normalize("NFD")
@@ -196,60 +195,54 @@
                 .toUpperCase();
         }
 
-        // Conversión flexible de meses
-        const MONTH_MAP = {
-            'ENE': 'Enero', 'ENERO': 'Enero', 'JAN': 'Enero',
-            'FEB': 'Febrero', 'FEBRERO': 'Febrero',
-            'MAR': 'Marzo', 'MARZO': 'Marzo',
-            'ABR': 'Abril', 'ABRIL': 'Abril', 'APR': 'Abril',
-            'MAY': 'Mayo', 'MAYO': 'Mayo',
-            'JUN': 'Junio', 'JUNIO': 'Junio',
-            'JUL': 'Julio', 'JULIO': 'Julio',
-            'AGO': 'Agosto', 'AGOSTO': 'Agosto', 'AUG': 'Agosto',
-            'SEP': 'Septiembre', 'SEPT': 'Septiembre', 'SEPTIEMBRE': 'Septiembre', 'SET': 'Septiembre',
-            'OCT': 'Octubre', 'OCTUBRE': 'Octubre',
-            'NOV': 'Noviembre', 'NOVIEMBRE': 'Noviembre',
-            'DIC': 'Diciembre', 'DICIEMBRE': 'Diciembre', 'DEC': 'Diciembre'
-        };
-
         const MONTH_ORDER = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
         const MONTH_LONG_ORDER = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+        const MONTH_PREFIXES = {
+            'ENE': 'ENE', 'ENERO': 'ENE', 'JAN': 'ENE',
+            'FEB': 'FEB', 'FEBRERO': 'FEB',
+            'MAR': 'MAR', 'MARZO': 'MAR',
+            'ABR': 'ABR', 'ABRIL': 'ABR', 'APR': 'ABR',
+            'MAY': 'MAY', 'MAYO': 'MAY',
+            'JUN': 'JUN', 'JUNIO': 'JUN',
+            'JUL': 'JUL', 'JULIO': 'JUL',
+            'AGO': 'AGO', 'AGOSTO': 'AGO', 'AUG': 'AGO',
+            'SEP': 'SEP', 'SEPT': 'SEP', 'SEPTIEMBRE': 'SEP', 'SET': 'SEP', 'SETIEMBRE': 'SEP',
+            'OCT': 'OCT', 'OCTUBRE': 'OCT',
+            'NOV': 'NOV', 'NOVIEMBRE': 'NOV',
+            'DIC': 'DIC', 'DICIEMBRE': 'DIC', 'DEC': 'DIC'
+        };
 
         function parseMonthCode(val) {
             if (!val) return '';
             const s = String(val).trim();
-            
-            // Si es un objeto fecha de GViz Date(YYYY, M, D)
             const mMatch = s.match(/Date\(\s*\d+\s*,\s*(\d+)/i);
             if (mMatch) {
                 const idx = parseInt(mMatch[1]);
                 if (idx >= 0 && idx < 12) return MONTH_ORDER[idx];
             }
-
-            // Si viene numérico 1-12
-            if (/^\d+$/.test(s)) {
-                const n = parseInt(s);
-                if (n >= 1 && n <= 12) return MONTH_ORDER[n - 1];
-            }
-
-            const c = cleanText(s).replace(/[^A-Z]/g, '');
-            for (let k in MONTH_MAP) {
-                if (c === k || c.startsWith(k)) {
-                    return MONTH_ORDER[MONTH_LONG_ORDER.indexOf(MONTH_MAP[k])];
-                }
+            const cleanAlpha = cleanText(s).replace(/[^A-Z]/g, '');
+            if (MONTH_PREFIXES[cleanAlpha]) return MONTH_PREFIXES[cleanAlpha];
+            if (cleanAlpha.length >= 3 && MONTH_PREFIXES[cleanAlpha.substring(0, 3)]) {
+                return MONTH_PREFIXES[cleanAlpha.substring(0, 3)];
             }
             return '';
         }
 
         function parseMonthLong(val) {
-            const code = parseMonthCode(val);
-            if (code) {
+            if (val === null || val === undefined || val === '') return '';
+            const s = String(val).trim();
+            if (/^\d+$/.test(s)) {
+                const n = parseInt(s);
+                if (n >= 1 && n <= 12) return MONTH_LONG_ORDER[n - 1];
+            }
+            const code = parseMonthCode(s);
+            if (code && MONTH_ORDER.includes(code)) {
                 return MONTH_LONG_ORDER[MONTH_ORDER.indexOf(code)];
             }
             return '';
         }
 
-        // Lector GViz tolerante
         function fetchSheetData(gid) {
             return new Promise((resolve, reject) => {
                 const callbackName = 'gviz_cb_' + Math.floor(Math.random() * 100000000);
@@ -277,7 +270,7 @@
                 };
 
                 script = document.createElement('script');
-                script.src = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=responseHandler:${callbackName}&gid=${gid}&headers=0`;
+                script.src = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=responseHandler:${callbackName}&gid=${gid}`;
                 script.onerror = () => {
                     cleanup();
                     reject(new Error("No se pudo conectar a la hoja. Verifica permisos públicos en Google Drive."));
@@ -286,22 +279,73 @@
             });
         }
 
-        function tableToMatrix(t) {
-            if (!t || !t.rows || t.rows.length === 0) return [];
-            let mat = [];
-            for (let i = 0; i < t.rows.length; i++) {
-                const r = t.rows[i];
+        // Extractor universal: recupera encabezados desde table.cols o desde table.rows
+        function extractHeadersAndRows(t, primaryKeyword = "NEGOCIO") {
+            if (!t) return { headers: [], rows: [] };
+
+            const cols = t.cols || [];
+            const colLabels = cols.map(c => {
+                if (!c) return '';
+                return (c.label !== undefined && c.label !== null) ? String(c.label).trim() : '';
+            });
+
+            const numCols = cols.length;
+            const rawRows = t.rows || [];
+            const dataRows = [];
+
+            for (let i = 0; i < rawRows.length; i++) {
+                const r = rawRows[i];
                 if (!r || !r.c) continue;
-                mat.push(r.c.map(cell => {
-                    if (!cell) return '';
-                    // Si trae valor formateado f (prioridad para texto/meses), sino valor v
-                    if (cell.f !== undefined && cell.f !== null && String(cell.f).trim() !== '') {
-                        return cell.f;
+                const cells = r.c;
+                const row = [];
+                const len = Math.max(numCols, cells.length);
+                for (let j = 0; j < len; j++) {
+                    if (j < cells.length && cells[j] !== null && cells[j] !== undefined) {
+                        const cell = cells[j];
+                        const v = cell.v;
+                        const f = cell.f;
+                        if (v !== null && v !== undefined) {
+                            if (typeof v === 'string' && v.startsWith('Date(') && f) {
+                                row.append ? row.append(f) : row.push(f);
+                            } else {
+                                row.push(v);
+                            }
+                        } else if (f !== null && f !== undefined) {
+                            row.push(f);
+                        } else {
+                            row.push('');
+                        }
+                    } else {
+                        row.push('');
                     }
-                    return (cell.v !== null && cell.v !== undefined) ? cell.v : '';
-                }));
+                }
+                dataRows.push(row);
             }
-            return mat;
+
+            const pkw = cleanText(primaryKeyword);
+            const hasKeywordInCols = pkw ? colLabels.some(l => cleanText(l).includes(pkw)) : false;
+
+            if (hasKeywordInCols) {
+                return { headers: colLabels, rows: dataRows };
+            }
+
+            if (pkw) {
+                for (let idx = 0; idx < dataRows.length; idx++) {
+                    if (dataRows[idx].some(cell => cleanText(cell).includes(pkw))) {
+                        return { headers: dataRows[idx], rows: dataRows.slice(idx + 1) };
+                    }
+                }
+            }
+
+            const hasTextInCols = colLabels.some(l => l.length > 0 && isNaN(l));
+            if (hasTextInCols) {
+                return { headers: colLabels, rows: dataRows };
+            }
+
+            if (dataRows.length > 0) {
+                return { headers: dataRows[0], rows: dataRows.slice(1) };
+            }
+            return { headers: [], rows: [] };
         }
 
         async function loadAndProcessData() {
@@ -311,11 +355,8 @@
                 fetchSheetData(GID_TONELADAS).catch(() => null)
             ]);
 
-            const data = tableToMatrix(rawInd);
-            if (data.length < 2) throw new Error("La hoja 'Indicadores Acum 2026' no contiene datos.");
-
-            const rawHeaders = data[0];
-            const rows = data.slice(1);
+            const { headers: rawHeaders, rows: dataRows } = extractHeadersAndRows(rawInd, 'NEGOCIO');
+            if (dataRows.length === 0) throw new Error("La hoja 'Indicadores Acum 2026' no contiene filas de datos.");
 
             let idxNegocio = -1, idxIndicador = -1, idxMeta = -1, idxImg = -1, idxAcum = -1;
             const monthCols = [];
@@ -327,8 +368,7 @@
                 else if (norm.includes('META') || norm.includes('OBJETIVO') || norm.includes('PTO')) idxMeta = i;
                 else if (norm.includes('IMAG') || norm.includes('LOGO')) idxImg = i;
                 else if (norm.includes('ACUM')) idxAcum = i;
-                
-                // Reconocimiento de meses
+
                 const mCode = parseMonthCode(h);
                 if (mCode && !monthCols.some(mc => mc.name === mCode)) {
                     monthCols.push({ name: mCode, index: i });
@@ -338,24 +378,36 @@
             if (idxNegocio === -1) idxNegocio = 0;
             if (idxIndicador === -1) idxIndicador = 1;
 
-            // Orden cronológico de los meses detectados
             monthCols.sort((a, b) => MONTH_ORDER.indexOf(a.name) - MONTH_ORDER.indexOf(b.name));
 
             const businesses = {};
             let nutresaLogo = 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/63/Logo_Nutresa.svg/1200px-Logo_Nutresa.svg.png';
 
             let mesCierre = new Date().getMonth() - 1;
-            try {
-                if (rawConfig) {
-                    const dataCfg = tableToMatrix(rawConfig);
-                    if (dataCfg.length > 0 && dataCfg[0].length > 1) {
-                        const val = dataCfg[0][1];
-                        if (val !== '' && !isNaN(val)) mesCierre = parseInt(val) - 1;
+            if (rawConfig) {
+                const { headers: cfgH, rows: cfgR } = extractHeadersAndRows(rawConfig, '');
+                let foundVal = null;
+                if (cfgH && cfgH.length > 1 && !isNaN(parseInt(cfgH[1]))) {
+                    foundVal = parseInt(cfgH[1]);
+                }
+                if (foundVal === null && cfgR && cfgR.length > 0) {
+                    for (let r of cfgR) {
+                        for (let c of r) {
+                            const n = parseInt(c);
+                            if (!isNaN(n) && n >= 1 && n <= 12) {
+                                foundVal = n;
+                                break;
+                            }
+                        }
+                        if (foundVal !== null) break;
                     }
                 }
-            } catch(e) {}
+                if (foundVal !== null) {
+                    mesCierre = foundVal - 1;
+                }
+            }
 
-            const processedData = rows.map(row => {
+            const processedData = dataRows.map(row => {
                 const negocio = cleanText(row[idxNegocio]);
                 const indicador = String(idxIndicador >= 0 ? row[idxIndicador] : '').trim();
                 const meta = parseValue(idxMeta >= 0 ? row[idxMeta] : 0);
@@ -374,7 +426,7 @@
                 return item;
             }).filter(d => d.negocio !== '');
 
-            // Promedio Noel
+            // Noel consolidado
             const noelNac = processedData.find(d => d.negocio === 'NOEL' && cleanText(d.indicador).includes('PRONOSTICO') && cleanText(d.indicador).includes('NACIONAL'));
             const noelInt = processedData.find(d => d.negocio === 'NOEL' && cleanText(d.indicador).includes('PRONOSTICO') && cleanText(d.indicador).includes('INTERNACIONAL'));
             if (noelNac && noelInt) {
@@ -390,7 +442,7 @@
                 processedData.push(cNoel);
             }
 
-            // Promedio Yupi Colombia
+            // Yupi Colombia consolidado
             const yupiNac = processedData.find(d => d.negocio === 'YUPI COLOMBIA' && cleanText(d.indicador).includes('PRONOSTICO') && cleanText(d.indicador).includes('NACIONAL'));
             const yupiInt = processedData.find(d => d.negocio === 'YUPI COLOMBIA' && cleanText(d.indicador).includes('PRONOSTICO') && cleanText(d.indicador).includes('INTERNACIONAL'));
             if (yupiNac && yupiInt) {
@@ -406,7 +458,7 @@
                 processedData.push(cYupi);
             }
 
-            // Promedio ABIMAR
+            // Abimar consolidado
             const abimarNac = processedData.find(d => d.negocio === 'ABIMAR' && cleanText(d.indicador).includes('PRONOSTICO') && cleanText(d.indicador).includes('NACIONAL'));
             const abimarInt = processedData.find(d => d.negocio === 'ABIMAR' && cleanText(d.indicador).includes('PRONOSTICO') && cleanText(d.indicador).includes('INTERNACIONAL'));
             if (abimarNac && abimarInt) {
@@ -438,55 +490,55 @@
                 return cItem;
             });
 
-            // Procesar Toneladas GPS
+            // Toneladas GPS
             let toneladasData = {};
-            try {
-                if (rawTon) {
-                    const dataTonRaw = tableToMatrix(rawTon);
-                    if (dataTonRaw.length > 1) {
-                        const headersTon = dataTonRaw[0].map(h => cleanText(h));
-                        const idxTN = headersTon.findIndex(h => h.includes('NEGOCIO') || h.includes('EMPRESA'));
-                        const idxTM = headersTon.findIndex(h => h.includes('MARCA'));
-                        const idxTMes = headersTon.findIndex(h => h.includes('MES'));
-                        const idxT25 = headersTon.findIndex(h => h.includes('2025') || h.includes('25'));
-                        const idxT26 = headersTon.findIndex(h => h.includes('2026') || h.includes('26'));
-                        const idxT27 = headersTon.findIndex(h => h.includes('2027') || h.includes('27'));
+            if (rawTon) {
+                const { headers: hTon, rows: rTon } = extractHeadersAndRows(rawTon, 'NEGOCIO');
+                if (rTon.length > 0) {
+                    const cleanHTon = hTon.map(h => cleanText(h));
+                    const idxTN = cleanHTon.findIndex(h => h.includes('NEGOCIO') || h.includes('EMPRESA'));
+                    const idxTM = cleanHTon.findIndex(h => h.includes('MARCA'));
+                    const idxTMes = cleanHTon.findIndex(h => h.includes('MES'));
+                    const idxT25 = cleanHTon.findIndex(h => h.includes('2025') || h.includes('25'));
+                    const idxT26 = cleanHTon.findIndex(h => h.includes('2026') || h.includes('26'));
+                    const idxT27 = cleanHTon.findIndex(h => h.includes('2027') || h.includes('27'));
 
-                        dataTonRaw.slice(1).forEach(row => {
-                            const negocio = idxTN >= 0 ? cleanText(row[idxTN]) : '';
-                            let marca = idxTM >= 0 ? String(row[idxTM]).trim().toUpperCase() : '';
-                            let rawMes = idxTMes >= 0 ? row[idxTMes] : '';
-                            let mes = parseMonthLong(rawMes);
-                            
-                            if (!mes || !negocio) return;
+                    rTon.forEach(row => {
+                        const negocio = idxTN >= 0 ? cleanText(row[idxTN]) : '';
+                        let marca = idxTM >= 0 ? String(row[idxTM]).trim().toUpperCase() : '';
+                        let rawMes = idxTMes >= 0 ? row[idxTMes] : '';
+                        let mes = parseMonthLong(rawMes);
+                        
+                        if (!mes || !negocio) return;
 
-                            const v25 = idxT25 >= 0 ? parseValue(row[idxT25]) : 0;
-                            const v26 = idxT26 >= 0 ? parseValue(row[idxT26]) : 0;
-                            const v27 = idxT27 >= 0 ? parseValue(row[idxT27]) : 0;
+                        const v25 = idxT25 >= 0 ? parseValue(row[idxT25]) : 0;
+                        const v26 = idxT26 >= 0 ? parseValue(row[idxT26]) : 0;
+                        const v27 = idxT27 >= 0 ? parseValue(row[idxT27]) : 0;
 
-                            if (!toneladasData[negocio]) toneladasData[negocio] = { total: {}, marcas: {} };
-                            if (!toneladasData[negocio].total[mes]) toneladasData[negocio].total[mes] = { t25: 0, t26: 0, t27: 0 };
-                            toneladasData[negocio].total[mes].t25 += v25;
-                            toneladasData[negocio].total[mes].t26 += v26;
-                            toneladasData[negocio].total[mes].t27 += v27;
+                        if (!toneladasData[negocio]) toneladasData[negocio] = { total: {}, marcas: {} };
+                        if (!toneladasData[negocio].total[mes]) toneladasData[negocio].total[mes] = { t25: 0, t26: 0, t27: 0 };
+                        toneladasData[negocio].total[mes].t25 += v25;
+                        toneladasData[negocio].total[mes].t26 += v26;
+                        toneladasData[negocio].total[mes].t27 += v27;
 
-                            if (marca) {
-                                if (!toneladasData[negocio].marcas[marca]) toneladasData[negocio].marcas[marca] = {};
-                                if (!toneladasData[negocio].marcas[marca][mes]) toneladasData[negocio].marcas[marca][mes] = { t25: 0, t26: 0, t27: 0 };
-                                toneladasData[negocio].marcas[marca][mes].t25 += v25;
-                                toneladasData[negocio].marcas[marca][mes].t26 += v26;
-                                toneladasData[negocio].marcas[marca][mes].t27 += v27;
-                            }
-                        });
-                    }
+                        if (marca) {
+                            if (!toneladasData[negocio].marcas[marca]) toneladasData[negocio].marcas[marca] = {};
+                            if (!toneladasData[negocio].marcas[marca][mes]) toneladasData[negocio].marcas[marca][mes] = { t25: 0, t26: 0, t27: 0 };
+                            toneladasData[negocio].marcas[marca][mes].t25 += v25;
+                            toneladasData[negocio].marcas[marca][mes].t26 += v26;
+                            toneladasData[negocio].marcas[marca][mes].t27 += v27;
+                        }
+                    });
                 }
-            } catch(e) {}
+            }
+
+            const detectedMonths = monthCols.length > 0 ? monthCols.map(m => m.name) : MONTH_ORDER;
 
             return {
                 data: [...processedData.filter(d => d.negocio !== 'CONSOLIDADO'), ...consolidated],
                 toneladasData,
                 businesses,
-                months: monthCols.map(m => m.name),
+                months: detectedMonths,
                 logoPrincipal: nutresaLogo,
                 mesCierre
             };
@@ -546,7 +598,6 @@
             `;
         }
 
-        // Conversión numérica blindada (para puntos, comas, porcentajes y espacios)
         function parseValue(val) {
             if (val === null || val === undefined || val === '') return 0;
             if (typeof val === 'number') return isNaN(val) ? 0 : val;
@@ -554,7 +605,6 @@
             const isPct = str.includes('%');
             str = str.replace('%', '').trim();
             
-            // Si tiene punto como miles y coma como decimal (1.234,50)
             if (str.includes('.') && str.includes(',')) {
                 str = str.replace(/\./g, '').replace(',', '.');
             } else if (str.includes(',')) {
@@ -635,9 +685,11 @@
 
         function renderFilters() {
             const c = document.getElementById('period-filters');
-            if(!state.months || state.months.length === 0) return;
+            const monthsToRender = (state.months && state.months.length > 0) ? state.months : MONTH_ORDER;
             let h = `<button onclick="changeP('ACUM AÑO 2026')" class="px-4 lg:px-5 py-1.5 rounded-lg text-[9px] lg:text-[10px] font-black tracking-widest bg-white shadow-sm text-blue-900 whitespace-nowrap" id="btn-ACUM">ACUM AÑO</button>`;
-            state.months.forEach(m => h += `<button onclick="changeP('${m}')" class="px-4 lg:px-5 py-1.5 rounded-lg text-[9px] lg:text-[10px] font-black tracking-widest text-gray-500 whitespace-nowrap" id="btn-${m}">${m}</button>`);
+            monthsToRender.forEach(m => {
+                h += `<button onclick="changeP('${m}')" class="px-4 lg:px-5 py-1.5 rounded-lg text-[9px] lg:text-[10px] font-black tracking-widest text-gray-500 whitespace-nowrap" id="btn-${m}">${m}</button>`;
+            });
             c.innerHTML = h;
         }
 
@@ -733,7 +785,6 @@
                 const bKey = Object.keys(allTonData).find(k => cleanText(k) === cleanText(state.business));
                 if (bKey && allTonData[bKey]) {
                     const marcasObj = allTonData[bKey].marcas || {};
-                    // Si no tiene desglose de marcas, usar el total de la compañía
                     if (Object.keys(marcasObj).length === 0) {
                         sourceData[bKey] = allTonData[bKey].total;
                     } else {
